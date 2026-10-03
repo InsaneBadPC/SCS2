@@ -1,5 +1,5 @@
 {
-  "project_id": "hfykngbhcxmnpxvjagoj",
+  "project_id": "gpgbgjxeybfncrexrpbr",
   "name": "songcraft-web-deployer",
   "verify_jwt": true,
   "entrypoint_path": "index.ts",

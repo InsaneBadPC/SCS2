@@ -7,7 +7,7 @@
  *   /functions/v1/legal?page=privacy
  *   /functions/v1/legal?page=terms
  */
-const LOGO = "https://hfykngbhcxmnpxvjagoj.supabase.co/storage/v1/object/public/songcraft-web/logo-512.png";
+const LOGO = "https://gpgbgjxeybfncrexrpbr.supabase.co/storage/v1/object/public/songcraft-web/logo-512.png";
 const UPDATED = "1. 9. 2026";
 
 const style = `

@@ -13,11 +13,13 @@ jobs:
     steps:
       - name: Sync stats
         env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SYNC_STATS_CRON_SECRET: ${{ secrets.SYNC_STATS_CRON_SECRET }}
         run: |
+          test -n "$SUPABASE_URL"
           test -n "$SYNC_STATS_CRON_SECRET"
           curl -sS -o - -w "\nHTTP %{http_code}\n" \
-            -X POST "https://hfykngbhcxmnpxvjagoj.supabase.co/functions/v1/youtube-sync-stats" \
+            -X POST "$SUPABASE_URL/functions/v1/youtube-sync-stats" \
             -H "x-cron-secret: $SYNC_STATS_CRON_SECRET" \
             -H "Content-Type: application/json" \
             -d '{}'

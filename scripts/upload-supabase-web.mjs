@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 const root = new URL("../dist-web/", import.meta.url).pathname;
-const supabaseUrl = process.env.SONGCRAFT_SUPABASE_URL || "https://hfykngbhcxmnpxvjagoj.supabase.co";
+const supabaseUrl = process.env.SONGCRAFT_SUPABASE_URL || "https://gpgbgjxeybfncrexrpbr.supabase.co";
 const webBucket = "songcraft-web";
 // Deploy token se NESMÍ držet v repu. Bere se z prostředí a bez něj skript
 // fail-closed skončí, místo aby vypisoval nějaký výchozí hodnotný token.

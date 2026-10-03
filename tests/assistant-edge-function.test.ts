@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const SUPABASE_URL = "https://hfykngbhcxmnpxvjagoj.supabase.co";
+const SUPABASE_URL = "https://gpgbgjxeybfncrexrpbr.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_5mOBkLJhXzLb6U6_stJLQQ_j89L0lEH";
 const functionUrl = `${SUPABASE_URL}/functions/v1/songcraft-studio-assistant`;
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const SUPABASE_URL = "https://hfykngbhcxmnpxvjagoj.supabase.co";
+const SUPABASE_URL = "https://gpgbgjxeybfncrexrpbr.supabase.co";
 
 describe("Supabase service role configuration", () => {
   it("accepts the configured server key for a read-only administrative request", async () => {

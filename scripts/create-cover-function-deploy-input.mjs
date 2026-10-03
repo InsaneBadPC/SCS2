@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 
 const source = await readFile(new URL("../supabase/functions/songcraft-cover-ai/index.ts", import.meta.url), "utf8");
 const input = {
-  project_id: "hfykngbhcxmnpxvjagoj",
+  project_id: "gpgbgjxeybfncrexrpbr",
   name: "songcraft-cover-ai",
   verify_jwt: true,
   entrypoint_path: "index.ts",

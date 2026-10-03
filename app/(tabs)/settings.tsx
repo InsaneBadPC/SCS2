@@ -116,7 +116,7 @@ export default function SettingsScreen() {
   </ScrollView></ScreenContainer>;
 }
 
-const YOUTUBE_REDIRECT = "https://hfykngbhcxmnpxvjagoj.supabase.co/functions/v1/youtube-oauth-callback";
+const YOUTUBE_REDIRECT = "https://gpgbgjxeybfncrexrpbr.supabase.co/functions/v1/youtube-oauth-callback";
 
 function Stat({ value, label }: { value: number; label: string }) { const colors = useColors(); return <View style={[styles.stat, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.statValue, { color: colors.foreground }]}>{value}</Text><Text style={[styles.statLabel, { color: colors.muted }]}>{label}</Text></View>; }
 function Info({ icon, title, text }: { icon: React.ComponentProps<typeof MaterialIcons>["name"]; title: string; text: string }) { const colors = useColors(); return <View style={styles.info}><View style={[styles.infoIcon, { backgroundColor: `${colors.primary}1C` }]}><MaterialIcons name={icon} size={20} color={colors.primary} /></View><View style={styles.infoCopy}><Text style={[styles.infoTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.infoText, { color: colors.muted }]}>{text}</Text></View></View>; }

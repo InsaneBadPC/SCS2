@@ -1,5 +1,5 @@
 {
-  "project_id": "hfykngbhcxmnpxvjagoj",
+  "project_id": "gpgbgjxeybfncrexrpbr",
   "name": "songcraft_static_web_lockdown",
   "query": "drop policy if exists songcraft_web_upload on storage.objects;\ndrop policy if exists songcraft_web_update on storage.objects;"
 }

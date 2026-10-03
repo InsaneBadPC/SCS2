@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-const url = "https://hfykngbhcxmnpxvjagoj.supabase.co";
+const url = "https://gpgbgjxeybfncrexrpbr.supabase.co";
 const key = "sb_publishable_5mOBkLJhXzLb6U6_stJLQQ_j89L0lEH";
 
 describe("songcraft-cover-ai", () => {

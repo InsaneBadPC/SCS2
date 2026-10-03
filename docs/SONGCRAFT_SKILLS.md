@@ -19,7 +19,7 @@ Když něco nešlo ověřit, je to v textu označené jako **NE OVĚŘENO**.
 | Secrety (mimo repo) | `~/InsaneCode/secrets/edge-functions.env` (16 klíčů), `songcraft-release.jks`, `songcraft-release.pass` |
 | Další secrety | `/storage/emulated/0/InsaneCode/Secret/` (Oracle, YouTube client_secret, `PRISTUPOVE-ÚDAJE.md`) |
 | Supabase projekt | `hfykngbhcxmnpxvjagoj` |
-| GitHub | `InsaneBadPC/songcraft-studio` (public) |
+| GitHub | `InsaneBadPC/SCS2` (public) |
 | Stack | Expo SDK 54, RN 0.81.5, React 19.1, expo-router 6, TS strict, NativeWind 4, TanStack Query 5, Supabase, Vitest 2 |
 | Verze v `package.json` | `2.9.1` (APK release má `2.9.4` – verzi propíše workflow před prebuildem) |
 | Nástroje v Termuxu | `ffmpeg 8.1.3`, `deno`, `supabase`, `gh 2.101.0` (bez auth), `node 22`, `python 3.14` |
@@ -98,7 +98,7 @@ Pravidla:
 Ověřit stav CI na commitu:
 
 ```bash
-curl -s "https://api.github.com/repos/InsaneBadPC/songcraft-studio/actions/runs?per_page=10" \
+curl -s "https://api.github.com/repos/InsaneBadPC/SCS2/actions/runs?per_page=10" \
 | python3 -c "import json,sys;[print(f\"{r['name'][:30]:30} {r['conclusion']:8} {r['head_sha'][:8]} {r['created_at']}\") for r in json.load(sys.stdin)['workflow_runs']]"
 ```
 
@@ -520,14 +520,13 @@ POST {SUPABASE_URL}/storage/v1/object/songcraft/{uid}/covers/test.jpg   (JWT v A
 
 ---
 
-## 11b. SKILL: Dvě repa, updater a podepisování APK
+## 11b. SKILL: Jedno repo, updater a podepisování APK
 
-Repů jsou **dva** a nesmí se zaměnit:
+Repo je **jedno**, větev je `main` a updater hledá tagy `app-vX.Y.Z`:
 
-| Repo | Verze | K čemu |
-|---|---|---|
-| `InsaneBadPC/SCS2` | 3.x.x (main) | zdroj pravdy, CI, nasazování funkcí a migrací |
-| `InsaneBadPC/SCS2` | 3.0.x | **odtud updater v aplikaci tahá release** |
+| Repo | Větev | Tagy release | K čemu |
+|---|---|---|---|
+| `InsaneBadPC/SCS2` | `main` | `app-vX.Y.Z` | zdroj pravdy, CI, nasazování funkcí a migrací, a zároveň **repo, ze kterého updater v aplikaci tahá release** |
 
 `lib/app-update.ts` má `const REPO = "..."` zadrátovaný. Aplikace si pak hledá
 `app-v*` na tomhle repu. Pushnutí do `songcraft-studio` tedy samotný nestačí,

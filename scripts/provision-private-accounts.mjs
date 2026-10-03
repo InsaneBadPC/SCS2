@@ -1,4 +1,4 @@
-const SUPABASE_URL = "https://hfykngbhcxmnpxvjagoj.supabase.co";
+const SUPABASE_URL = "https://gpgbgjxeybfncrexrpbr.supabase.co";
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const accounts = [

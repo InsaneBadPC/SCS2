@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-const supabaseUrl = process.env.SONGCRAFT_SUPABASE_URL || "https://hfykngbhcxmnpxvjagoj.supabase.co";
+const supabaseUrl = process.env.SONGCRAFT_SUPABASE_URL || "https://gpgbgjxeybfncrexrpbr.supabase.co";
 // Token patří do prostředí / GitHub Secrets. V repu nesmí být žádná hodnota.
 const deployToken = process.env.SONGCRAFT_WEB_DEPLOY_TOKEN;
 if (!deployToken) {
