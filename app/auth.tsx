@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
+import { BrandMark } from "@/components/brand-mark";
 import { ScreenContainer } from "@/components/screen-container";
 import { STUDIO_ACCOUNTS, type StudioAccount } from "@/lib/accounts";
 import { useColors } from "@/hooks/use-colors";
@@ -73,9 +74,7 @@ export default function AuthScreen() {
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.icon, { backgroundColor: `${colors.primary}25` }]}>
-          <MaterialIcons name="lock-person" size={29} color={colors.primary} />
-        </View>
+        <BrandMark size={58} />
         <Text style={[styles.title, { color: colors.foreground }]}>Tvoje soukromé studio</Text>
         <Text style={[styles.text, { color: colors.muted }]}>
           Vyber svůj účet. Každý má oddělené texty, přebaly, skladby i soubory.
@@ -162,7 +161,6 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { gap: Space.md, paddingVertical: Space.xl, paddingBottom: Space.xxxl },
-  icon: { width: 58, height: 58, borderRadius: Radius.lg, alignItems: "center", justifyContent: "center" },
   title: { fontSize: Type.title.fontSize, lineHeight: Type.title.lineHeight, fontWeight: "900", marginTop: 4 },
   text: { ...Type.label, lineHeight: 19, marginBottom: 5 },
   accounts: { gap: Space.sm },

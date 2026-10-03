@@ -41,7 +41,7 @@ async function ensurePermission(): Promise<void> {
   const asked = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (asked.granted) return;
   if (asked.canAskAgain === false) {
-    throw new Error("Aplikace nemá přístup k fotkám. Povol ho v Nastavení systému → Aplikace → SongCraft Studio → Fotky a videa.");
+    throw new Error("Aplikace nemá přístup k fotkám. Povol ho v Nastavení systému → Aplikace → SCS2 → Fotky a videa.");
   }
   throw new Error("Bez přístupu k fotkám nemůžu vybrat soubor.");
 }

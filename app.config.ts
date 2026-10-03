@@ -33,10 +33,8 @@ const bundleId =
 
 const env = {
   // App branding - update these values directly (do not use env vars)
-  appName: "SongCraft Studio",
+  appName: "SCS2",
   appSlug: "songcraft-studio",
-  // Ikona je součástí sestavení v assets/images/icon.png.
-  logoUrl: "",
   scheme: "songcraftstudio",
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -60,7 +58,7 @@ const config: ExpoConfig = {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#E6F4FE",
+      backgroundColor: "#070A0D",
       foregroundImage: "./assets/images/android-icon-foreground.png",
       backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
@@ -120,7 +118,7 @@ const config: ExpoConfig = {
         image: "./assets/images/splash-icon.png",
         imageWidth: 200,
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#070A0D",
         dark: {
           backgroundColor: "#000000",
         },

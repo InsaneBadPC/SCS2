@@ -21,5 +21,5 @@ export function isAllowedPrivateUser(user: PrivateUser | null | undefined, env: 
 }
 
 export function privateAccessMessage() {
-  return "Účet není v produkčním allowlistu SongCraft Studia.";
+  return "Účet není v produkčním allowlistu SCS2.";
 }
