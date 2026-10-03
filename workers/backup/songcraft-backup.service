@@ -1,0 +1,54 @@
+[Unit]
+Description=SongCraft Studio SCS2 project backup (Postgres + Storage + config inventory)
+Documentation=file:/opt/songcraft-studio/docs/../dokumentace/FEAT-ZALOHOVANI-SCS2.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=songcraft-backup
+Group=songcraft-backup
+WorkingDirectory=/opt/songcraft-studio
+EnvironmentFile=/etc/songcraft-studio/backup.env
+ExecStartPre=/usr/bin/test -r /etc/songcraft-studio/backup.env
+ExecStartPre=/usr/bin/test -w /var/lib/songcraft-studio/backups
+ExecStart=/usr/bin/bash /opt/songcraft-studio/scripts/backup-service.sh
+TimeoutStartSec=7200
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/songcraft-studio
+UMask=0077
+
+# Hardening beyond songcraft-renderer.service.example. That file stops at
+# ProtectSystem=strict; a backup job holds the service role key and a database
+# password, so it gets the extra set as well. Every directive below is
+# fail-closed — the job stops rather than widening its own sandbox.
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ProtectProc=invisible
+ProcSubset=pid
+
+# Failure notification. The dead-man's switch covers the case the unit cannot
+# report itself; this unit covers the case where it started and failed.
+OnFailure=songcraft-backup-notify@%n.service
+
+[Install]
+WantedBy=multi-user.target

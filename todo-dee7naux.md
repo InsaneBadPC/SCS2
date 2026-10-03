@@ -1,0 +1,25 @@
+# Project TODO
+
+- [x] Diagnostikovat a opravit selhávající sestavení aplikace SongCraft Studio.
+- [x] Nahradit přihlášení Manus soukromým přihlášením pro Temney, DJ Palačinka a Verču.
+- [x] Zajistit bezpečné ukládání hesel a oddělení dat mezi jednotlivými účty.
+- [x] Najít a opravit regresi Android sestavení po zavedení soukromého přihlášení bez omezení funkcí aplikace.
+- [x] Prověřit a odstranit zbytkové vazby na původní infrastrukturu bez změny funkcí soukromých účtů.
+- [x] Opravit vzdálené Android sestavení bez změny soukromého přihlášení a izolace dat.
+- [x] Přidat GitHub Actions workflow pro ověření Expo a Android buildu mimo mobilní rozhraní Manus.
+- [x] Zjistit, že zdroj mobilní aplikace je již v repozitáři InsaneBadPC/songcraft-studio, a publikovat workflow do větve main.
+- [x] Ověřit potřebné oprávnění účtu InsaneBadPC pro publikování GitHub Actions workflow.
+- [x] Publikovat zdroj a GitHub Actions Android workflow do repozitáře InsaneBadPC/songcraft-studio.
+- [x] Ověřit dostupnost a funkčnost webového rozhraní se soukromým přihlášením.
+- [x] Převést webové rozhraní na nezávislé nasazení z GitHubu bez Manus domény a runtime závislosti.
+- [x] Navrhnout nasazení SongCraft Studio nezávislé na Manus se Supabase jako datovou a ověřovací vrstvou.
+- [x] Nasadit statický web na GitHub Pages z repozitáře InsaneBadPC/songcraft-studio.
+- [x] Vytvořit izolovanou experimentální větev s AI chatem nad daty právě přihlášeného účtu.
+- [x] Přidat bezpečné volání Google AI přes Supabase Edge Function bez vystavení klíče klientovi.
+- [x] Vyloučit placené generování obrázků a soukromé ukládání výsledků z bezplatného experimentu.
+- [x] Implementovat pouze bezplatný Gemini textový chat a přípravu promptů pro obaly bez generování obrázků přes API.
+- [x] Navrhnout a nasadit bezplatné generování obalů skladeb s kontextem Temney, alba, názvu, textu a volitelné poznámky.
+- [x] Vytvořit automatický 16:9 obal, který přímo ve výsledném JPG obsahuje Temney, název alba a název skladby.
+- [x] Opravit pád při výběru MP3 a následném otevření skladby z knihovny odolným přehrávačem a binárním nahráváním.
+- [ ] Ověřit webový export a sestavit Android APK z izolované větve.
+- [ ] Vytvořit a předat odkaz na APK z izolované větve s opravou MP3 a generováním obalů.

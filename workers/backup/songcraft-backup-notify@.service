@@ -1,0 +1,26 @@
+[Unit]
+Description=SongCraft backup failure mail for %i
+Documentation=file:/opt/songcraft-studio/dokumentace/FEAT-ZALOHOVANI-SCS2.md
+
+[Service]
+Type=oneshot
+# The instance name is the failed unit (%i == %n == songcraft-backup.service).
+# Runs as a dedicated unprivileged user; the mail relay needs no shell, no home
+# directory and no write access outside /var/lib/songcraft-studio.
+User=songcraft-backup
+Group=songcraft-backup
+WorkingDirectory=/var/lib/songcraft-studio
+EnvironmentFile=/etc/songcraft-studio/backup-notify.env
+ExecStart=/usr/local/lib/songcraft-studio/send-backup-failure-mail.sh %i
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/lib/songcraft-studio
+ReadWritePaths=/var/lib/songcraft-studio
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+LockPersonality=true

@@ -1,0 +1,27 @@
+name: Prepare scheduled YouTube publications
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Prepare due drafts
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          PUBLISH_SCHEDULER_SECRET: ${{ secrets.PUBLISH_SCHEDULER_SECRET }}
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$PUBLISH_SCHEDULER_SECRET"
+          curl --fail-with-body --silent --show-error --retry 2 \
+            -X POST "$SUPABASE_URL/functions/v1/youtube-publish-scheduler" \
+            -H "x-cron-secret: $PUBLISH_SCHEDULER_SECRET" \
+            -H "Content-Type: application/json" \
+            --data '{}'

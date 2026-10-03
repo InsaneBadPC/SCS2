@@ -1,0 +1,22 @@
+[Unit]
+Description=Nightly SongCraft Studio SCS2 project backup
+Documentation=file:/opt/songcraft-studio/dokumentace/FEAT-ZALOHOVANI-SCS2.md
+
+[Timer]
+# 03:17 UTC. Deliberately not on the hour: this VM also runs the video renderer
+# and the YouTube publisher, and everything in this project that fires at :00
+# piles onto the same minute.
+OnCalendar=*-*-* 03:17:00 UTC
+# A machine that was asleep or powered off at 03:17 runs the backup on the next
+# boot instead of silently skipping a day. Without this, a VM that is down over
+# a weekend loses two days of backups and nothing anywhere reports it — the
+# dead-man's switch is the second line of defence, this is the first.
+Persistent=true
+# Jitter, so a fleet of SCS2 VMs does not all hit R2 in the same 10-minute
+# window once the project grows past one host.
+RandomizedDelaySec=600
+AccuracySec=1min
+Unit=songcraft-backup.service
+
+[Install]
+WantedBy=timers.target

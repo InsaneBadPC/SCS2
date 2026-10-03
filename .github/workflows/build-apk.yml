@@ -1,0 +1,163 @@
+name: Build Android APK
+
+# Každá změna aplikace (klient, konfigurace, závislosti) vygeneruje nové APK a
+# zveřejní ho jako GitHub release `app-vX.Y.Z`. Aplikace si ho pak sama nabídne
+# přes `lib/app-update.ts` (banner + ruční kontrola v Nastavení).
+on:
+  push:
+    branches:
+      - dev/ai-manager-studio
+      - main
+    paths:
+      - "app/**"
+      - "components/**"
+      - "hooks/**"
+      - "lib/**"
+      - "shared/**"
+      - "constants/**"
+      - "assets/**"
+      - "app.config.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "scripts/configure-android-signing.mjs"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: "Volitelná verze (např. 2.9.3). Prázdné = automaticky o 1 výš."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and publish APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Podpisový klíč žije jen v GitHub Secrets; hodnoty se nikdy nelogují.
+      CI_KEYSTORE_B64: ${{ secrets.CI_KEYSTORE }}
+      CI_KEYSTORE_PASS: ${{ secrets.CI_KEYSTORE_PASS }}
+      CI_KEY_ALIAS: ${{ secrets.CI_KEY_ALIAS }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Resolve release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          FORCE: ${{ inputs.force_version }}
+        run: |
+          set -euo pipefail
+          package_version=$(node -p "require('./package.json').version")
+          latest_tag=$(gh api "repos/$REPO/releases?per_page=100" \
+            --jq '[.[] | select(.tag_name | test("^app-v[0-9]+\\.[0-9]+\\.[0-9]+$")) | .tag_name] | first // empty' || true)
+          latest_version="${latest_tag#app-v}"
+          if [ -n "${FORCE:-}" ]; then
+            next_version="$FORCE"
+          else
+            highest=$(printf '%s\n%s\n' "${latest_version:-0.0.0}" "$package_version" | sort -V | tail -1)
+            next_version=$(node -e "const [a,b,c]=process.argv[1].split('.').map(Number);process.stdout.write(a+'.'+b+'.'+(c+1))" "$highest")
+          fi
+          to_code() { node -e "const p=process.argv[1].split('.').map(Number);process.stdout.write(String(p[0]*10000+p[1]*100+p[2]))" "$1"; }
+          latest_code=$(to_code "${latest_version:-0.0.0}")
+          next_code=$(to_code "$next_version")
+          if [ "$next_code" -le "$latest_code" ]; then
+            next_code=$((latest_code + 1))
+          fi
+          echo "version=$next_version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$next_code" >> "$GITHUB_OUTPUT"
+          # Verze musí být i uvnitř APK: `Constants.expoConfig.version` (Nastavení)
+          # a Android versionName jinak odpovídají package.json, ne tagu release —
+          # aplikace by si pak pořád nabízela „novou" verzi, kterou už má.
+          npm version --no-git-tag-version --allow-same-version "$next_version" >/dev/null
+          echo "balíček nastaven na $(node -p "require('./package.json').version")"
+          echo "vydáno: ${latest_version:-žádné} | nové: $next_version (code $next_code)"
+
+      - name: Generate Android project
+        env:
+          EXPO_ANDROID_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Configure release signing
+        run: node scripts/configure-android-signing.mjs
+
+      - name: Assemble release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk" || { echo "::error::APK se nevygeneroval"; exit 1; }
+          size=$(stat -c %s "$apk")
+          sha=$(sha256sum "$apk" | cut -d' ' -f1)
+          notes=$(git log -1 --pretty=%B "$COMMIT_SHA")
+          {
+            echo "Automatické sestavení po změně \`${COMMIT_SHA:0:8}\`."
+            echo
+            echo "- verze: ${VERSION} (versionCode ${VERSION_CODE})"
+            echo "- velikost: $((size / 1024 / 1024)) MB"
+            echo "- sha256: \`${sha}\`"
+            echo
+            echo "### Co se změnilo"
+            echo "$notes"
+          } > release-notes.md
+          tag="app-v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk" --clobber
+            gh release edit "$tag" --notes-file release-notes.md --title "SongCraft Studio ${VERSION}"
+          else
+            gh release create "$tag" "$apk" --title "SongCraft Studio ${VERSION}" --notes-file release-notes.md
+          fi
+          echo "vydáno $tag ($(du -h "$apk" | cut -f1))"
+
+      - name: Summary
+        run: |
+          {
+            echo "### APK ${{ steps.version.outputs.version }} (versionCode ${{ steps.version.outputs.version_code }})"
+            echo
+            echo "- release: https://github.com/${{ github.repository }}/releases/tag/app-v${{ steps.version.outputs.version }}"
+            echo "- APK: android/app/build/outputs/apk/release/app-release.apk"
+          } >> "$GITHUB_STEP_SUMMARY"

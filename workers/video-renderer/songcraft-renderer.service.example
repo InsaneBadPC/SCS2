@@ -1,0 +1,23 @@
+[Unit]
+Description=SongCraft Studio private video renderer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=songcraft-renderer
+Group=songcraft-renderer
+WorkingDirectory=/opt/songcraft-studio/workers/video-renderer
+EnvironmentFile=/etc/songcraft-studio/renderer.env
+ExecStart=/usr/bin/node /opt/songcraft-studio/workers/video-renderer/worker.mjs
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/songcraft-studio /tmp
+
+[Install]
+WantedBy=multi-user.target

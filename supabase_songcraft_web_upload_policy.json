@@ -1,0 +1,5 @@
+{
+  "project_id": "hfykngbhcxmnpxvjagoj",
+  "name": "songcraft_static_web_upload_policy",
+  "query": "drop policy if exists songcraft_web_upload_once on storage.objects;\ncreate policy songcraft_web_upload on storage.objects for insert to public with check (bucket_id = 'songcraft-web');\ncreate policy songcraft_web_update on storage.objects for update to public using (bucket_id = 'songcraft-web') with check (bucket_id = 'songcraft-web');"
+}

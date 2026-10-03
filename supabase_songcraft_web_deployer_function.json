@@ -1,0 +1,12 @@
+{
+  "project_id": "hfykngbhcxmnpxvjagoj",
+  "name": "songcraft-web-deployer",
+  "verify_jwt": true,
+  "entrypoint_path": "index.ts",
+  "files": [
+    {
+      "name": "index.ts",
+      "content": "import \"jsr:@supabase/functions-js/edge-runtime.d.ts\";\nimport { createClient } from \"jsr:@supabase/supabase-js@2\";\n\nconst json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { \"Content-Type\": \"application/json\" } });\nconst bytes = (base64: string) => Uint8Array.from(atob(base64), (entry) => entry.charCodeAt(0));\n\nDeno.serve(async (request) => {\n  if (request.method !== \"POST\") return json({ error: \"Použij POST.\" }, 405);\n  const input = await request.json().catch(() => null) as { path?: string; base64?: string; contentType?: string } | null;\n  if (!input?.path || !input.base64 || !input.contentType || input.path.includes(\"..\") || input.path.startsWith(\"/\")) return json({ error: \"Neplatný soubor pro statický web.\" }, 400);\n  const url = Deno.env.get(\"SUPABASE_URL\");\n  const serviceKey = Deno.env.get(\"SUPABASE_SERVICE_ROLE_KEY\");\n  if (!url || !serviceKey) return json({ error: \"Chybí servisní konfigurace hostingu.\" }, 500);\n  const service = createClient(url, serviceKey);\n  const { error } = await service.storage.from(\"songcraft-web\").upload(input.path, bytes(input.base64), { contentType: input.contentType, upsert: true });\n  return error ? json({ error: error.message }, 400) : json({ ok: true, path: input.path });\n});"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "project_id": "hfykngbhcxmnpxvjagoj",
+  "name": "songcraft-web-deployer",
+  "verify_jwt": false,
+  "entrypoint_path": "index.ts",
+  "files": [
+    {
+      "name": "index.ts",
+      "content": "Deno.serve(() => new Response(JSON.stringify({ error: 'Nasazovací most je uzavřen.' }), { status: 403, headers: { 'content-type': 'application/json' } }));"
+    }
+  ]
+}

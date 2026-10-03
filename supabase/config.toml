@@ -1,0 +1,55 @@
+project_id = "hfykngbhcxmnpxvjagoj"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:8081"
+additional_redirect_urls = ["http://localhost:8081/**"]
+jwt_expiry = 3600
+enable_signup = false
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[functions.agent-orchestrator]
+verify_jwt = true
+
+[functions.agent-confirm]
+verify_jwt = true
+
+[functions.songcraft-media]
+verify_jwt = true
+
+[functions.songcraft-youtube]
+verify_jwt = true
+
+[functions.youtube-publish]
+verify_jwt = true
+
+[functions.youtube-oauth-start]
+verify_jwt = true
+
+[functions.youtube-oauth-callback]
+verify_jwt = false
+
+[functions.youtube-sync-stats]
+verify_jwt = false
+
+[functions.youtube-publish-scheduler]
+verify_jwt = false

@@ -1,0 +1,55 @@
+# Project TODO
+
+- [x] Definovat datový model alb, textových dokumentů, skladeb a zvukových verzí.
+- [x] Vytvořit zabezpečené databázové API pro cloudovou synchronizaci uživatelských dat.
+- [x] Přidat cloudové ukládání obrázků přebalů a MP3 souborů.
+- [x] Vytvořit domovský přehled se stavem konceptů a rychlými akcemi.
+- [x] Vytvořit seznam textů s vyhledáváním, filtrováním a řazením podle alb.
+- [x] Vytvořit editor textu pro prompt, text písně, poznámky, album a stav dokončení.
+- [x] Přidat výběr a přiřazení obrázku k dokumentu.
+- [x] Vytvořit správu alb včetně obalu a obsahu.
+- [x] Vytvořit knihovnu hotových skladeb a detail skladby s kopírováním promptu a textu.
+- [x] Vytvořit správu více MP3 verzí skladeb včetně pracovních ID3 metadat.
+- [x] Připravit exportní postup, který vytvoří kopii MP3 s upravenými ID3 tagy bez přepsání originálu.
+- [x] Vytvořit jedinečnou ikonu SongCraft Studio a nastavit branding aplikace.
+- [x] Ověřit typy, testy a klíčové mobilní i webové toky.
+- [x] Sepsat podrobný popis architektury, funkcí, omezení a dalšího rozvoje.
+- [x] Přidat integrovaný MP3 přehrávač s přepínáním a porovnáváním verzí v detailu skladby.
+- [x] Přidat pětihvězdičkové hodnocení a označení hlavní nebo finální MP3 verze.
+- [x] Přidat řazení MP3 verzí podle hvězdičkového hodnocení a filtr knihovny na finální skladby.
+- [x] Přepracovat databázi tak, aby každá skladba přímo obsahovala text, obrázek, MP3 verze a album.
+- [x] Přepracovat rozhraní na přímé vytváření a úpravy samostatných položek skladeb včetně jejich přiřazení do alb.
+- [x] Zachovat samostatný katalog textů s editorem pro prompt stylu a samotný text písně a propojit jej s katalogem skladeb.
+- [x] Při uložení textu vyžádat název skladby a vytvořit propojenou cloudovou položku skladby.
+- [x] Přepracovat detail skladby na obrázek, album, kopírovatelný prompt, rozbalitelný text a spravované MP3 verze.
+- [x] Při přidání MP3 vytvořit pojmenovanou cloudovou kopii s ID3 tagy Temney, názvem skladby, albem a obrázkem.
+- [x] Přidat automatické číslování MP3 verzí V1, V2 a další.
+- [x] Přidat hromadný import více MP3 souborů k jedné skladbě.
+- [x] Přidat export finálních skladeb připravený pro publikaci na YouTube.
+- [x] Zrušeno na přání uživatele: připojit Google Drive jako cílové úložiště MP3, obrázků a záložních manifestů skladeb.
+- [x] Odloženo na přání uživatele: připravit webové rozhraní pro bezplatné externí hostování se zabezpečeným napojením na API aplikace.
+- [x] Zrušeno na přání uživatele: zajistit obousměrnou synchronizaci přes Google Drive manifesty; zachována je stávající synchronizace společného katalogu aplikace.
+- [x] Stabilizovat aplikaci bez nedokončeného propojení Google Drivu a bez nutnosti dalších účtů uživatele.
+- [x] Přidat jednoznačné uložení hotové MP3 do telefonu a systémové sdílení z detailu skladby i YouTube exportu.
+- [x] Přidat kompletní export knihovny obsahující texty, prompty, alba, obrázky, MP3 a metadata.
+- [x] Přidat průběh vytváření exportního archivu a možnost exportovat samostatné album.
+- [x] Přidat český hledač rýmů s vložením vybraného rýmu do editoru textů a skladeb.
+- [x] Přidat správu vlastních slov, která se uloží do cloudového slovníku a použijí se v hledači rýmů.
+- [x] Přidat import textů z TXT, dokumentových souborů a Google Dokumentů do katalogu textů.
+- [x] Přidat import DOCX a hromadný import více textových souborů.
+- [x] Při importu rozpoznat a přehledně označit sekce písně, například sloku, refrén a bridge.
+- [x] Opravit okamžité zobrazení nahraného obalu v seznamu a detailu alba.
+- [x] Připravit SongCraft Studio pro externí databázi, úložiště souborů, backend a webové hostování mimo interní infrastrukturu projektu.
+- [x] Založit externí schéma Supabase pro soukromá alba, texty, skladby, MP3 verze, rýmy a objektové úložiště.
+- [x] Ověřit RLS a přístupová pravidla externího Supabase projektu bezpečnostním auditem.
+- [x] Přidat externí klientskou vrstvu Supabase a zabezpečenou Edge funkci pro vytváření ID3-tagovaných MP3 kopií.
+- [x] Přepojit klienta, přihlášení, zpracování MP3 a nasazení webu na externí infrastrukturu.
+- [x] Nahradit aktivní Manus OAuth přihlášení jednoduchým Supabase přihlášením v aplikaci.
+- [x] Přepojit všechny obrazovky z interních tRPC volání na externí Supabase synchronizaci.
+- [x] Přepojit nahrávání souborů, MP3 kopie a exporty na Supabase Storage a Edge funkce.
+- [x] Připravit nezávislé externí nasazení webového rozhraní bez interního hostingu.
+- [x] Přidat export finální MP3 a přiřazeného obrázku jako YouTube video ve Full HD rozlišení.
+- [x] Při importu dokumentu uložit první samostatný odstavec do stylového promptu a zbývající obsah do textu písně.
+- [x] Přidat generování coveru skladby z názvu, promptu stylu a textu písně s uložením do externího úložiště.
+- [x] Obnovit stabilní náhled a Android sestavení po návratu na bezpečnou konfiguraci.
+- [x] Vrátit YouTube videoexport s coverem, názvem skladby a Temney přes externí cloudový MP4 renderer bez nativního FFmpeg modulu; dynamická waveform vrstva zůstává mimo bezplatný renderer.

@@ -1,0 +1,59 @@
+name: SongCraft CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev/ai-manager-studio
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: songcraft-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hermetic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Security boundary
+        run: pnpm security:check
+      - name: Production structure smoke check
+        run: pnpm smoke:structure
+      - name: TypeScript
+        run: pnpm check
+      - name: Lint
+        run: pnpm lint
+      - name: Hermetic tests
+        run: pnpm test
+      - name: Web export
+        # NativeWind zapisuje web.css do .cache až během bundlu a Metro pak
+        # nemůže spočítat SHA-1 souboru, který se mezitím změnil. Cache proto
+        # před každým exportem vyčistíme (build zůstává deterministický).
+        run: |
+          rm -rf node_modules/react-native-css-interop/.cache
+          pnpm exec expo export --platform web
+
+  deno-functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check active Edge Functions
+        run: |
+          find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print0 | xargs -0 -n1 deno check --config supabase/functions/deno.json --node-modules-dir=auto --no-lock

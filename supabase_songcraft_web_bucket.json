@@ -1,0 +1,5 @@
+{
+  "project_id": "hfykngbhcxmnpxvjagoj",
+  "name": "songcraft_static_web_bucket",
+  "query": "insert into storage.buckets (id, name, public) values ('songcraft-web', 'songcraft-web', true);\ncreate policy songcraft_web_upload_once on storage.objects for insert to anon with check (bucket_id = 'songcraft-web');"
+}

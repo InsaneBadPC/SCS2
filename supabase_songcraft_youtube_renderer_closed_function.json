@@ -1,0 +1,12 @@
+{
+  "project_id": "hfykngbhcxmnpxvjagoj",
+  "name": "songcraft-youtube-renderer",
+  "verify_jwt": false,
+  "entrypoint_path": "index.ts",
+  "files": [
+    {
+      "name": "index.ts",
+      "content": "Deno.serve(() => new Response(JSON.stringify({ error: 'Nepoužívaná varianta rendereru je uzavřena.' }), { status: 410, headers: { 'content-type': 'application/json' } }));"
+    }
+  ]
+}

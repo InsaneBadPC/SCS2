@@ -1,0 +1,23 @@
+name: Sync YouTube stats (daily)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Call youtube-sync-stats
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sync stats
+        env:
+          SYNC_STATS_CRON_SECRET: ${{ secrets.SYNC_STATS_CRON_SECRET }}
+        run: |
+          test -n "$SYNC_STATS_CRON_SECRET"
+          curl -sS -o - -w "\nHTTP %{http_code}\n" \
+            -X POST "https://hfykngbhcxmnpxvjagoj.supabase.co/functions/v1/youtube-sync-stats" \
+            -H "x-cron-secret: $SYNC_STATS_CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{}'

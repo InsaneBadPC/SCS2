@@ -1,0 +1,78 @@
+name: Build experimental Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout experiment
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Verify Expo configuration
+        run: |
+          npx expo-doctor
+          npx expo prebuild --platform android --no-install
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Upload experimental APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: songcraft-android-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Read app version
+        id: app-version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish update release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-v${{ steps.app-version.outputs.version }}
+          name: SongCraft Studio v${{ steps.app-version.outputs.version }}
+          body: |
+            Automatická aktualizace SongCraft Studio ${{ steps.app-version.outputs.version }}.
+            Aplikace si tuto verzi nabídne sama přímo v Nastavení (nebo po spuštění).
+          files: android/app/build/outputs/apk/release/app-release.apk
+          fail_on_unmatched_files: true
