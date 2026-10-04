@@ -58,7 +58,8 @@
       "kind": "orphan",
       "object_count": 1,
       "total_bytes": 140,
-      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid so the objects become readable. 1 object, 140 B."
+      "duplicate_of": "93b3821c-54c9-406e-9632-0986ed24bc5d",
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid so the objects become readable. 1 object, 140 B. Byte-identical (same sha256) to 93b3821c/covers/obalka-test.jpg, so both land on the same key temney/covers/obalka-test.jpg; counted once in orphan_assignment_decision."
     },
     {
       "old_prefix": "8a3cf566-2f3b-4c8a-af89-49cff431d35d",
@@ -67,7 +68,8 @@
       "kind": "orphan",
       "object_count": 5,
       "total_bytes": 635,
-      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 5 test.jpg/test.png/test2-4.jpg fixtures."
+      "duplicate_of": "bf6ecfb6-95d1-47f7-b04b-d88464da52db",
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 5 test.jpg/test.png/test2-4.jpg fixtures. Byte-identical (same size AND sha256 per path) to bf6ecfb6's 5 paths, so both land on the same 5 keys under temney/covers/; counted once in orphan_assignment_decision."
     },
     {
       "old_prefix": "93b3821c-54c9-406e-9632-0986ed24bc5d",
@@ -76,7 +78,8 @@
       "kind": "orphan",
       "object_count": 1,
       "total_bytes": 140,
-      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 1 object, 140 B."
+      "duplicate_of": "6fa1efe4-3201-41eb-973e-612b8a56bf4a",
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 1 object, 140 B. Byte-identical (same sha256) to 6fa1efe4/covers/obalka-test.jpg, so both land on the same key temney/covers/obalka-test.jpg; counted once in orphan_assignment_decision."
     },
     {
       "old_prefix": "bf6ecfb6-95d1-47f7-b04b-d88464da52db",
@@ -85,17 +88,27 @@
       "kind": "orphan",
       "object_count": 5,
       "total_bytes": 635,
-      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 5 test.jpg/test.png/test2-4.jpg fixtures."
+      "duplicate_of": "8a3cf566-2f3b-4c8a-af89-49cff431d35d",
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 5 test.jpg/test.png/test2-4.jpg fixtures. Byte-identical (same size AND sha256 per path) to 8a3cf566's 5 paths, so both land on the same 5 keys under temney/covers/; counted once in orphan_assignment_decision."
     }
   ],
   "orphan_assignment_decision": {
     "assigned_to": "temney",
     "new_prefix": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
     "total_prefixes": 4,
-    "total_objects": 12,
-    "total_bytes": 1550,
-    "rationale": "The 4 orphan prefixes have no owning user, so foldername(name)[1] = auth.uid() can never pass for them under any mapping. Rather than drop them (leaving 75 recorded orphans permanently unreadable) they are reassigned to temney's new uuid. 1550 B total across 12 tiny test fixtures (test.jpg, test.png, test2-4.jpg, obalka-test.jpg) is not worth blocking the import on. Decision is recorded here so the media upload job and any future audit agree.",
+    "total_objects": 6,
+    "total_bytes": 775,
+    "note": "total_objects/total_bytes are the POST-COLLAPSE figures and are what the media upload job writes. The 4 orphan prefixes hold pairwise-duplicate relative paths (6fa1efe4 == 93b3821c, 8a3cf566 == bf6ecfb6), so after the first-segment rewrite all 12 legacy rows land on 6 distinct keys under temney's new prefix; the per-prefix object_count/total_bytes in orphan_prefixes[] sum to 12/1550 and are legacy-side counts, NOT what is uploaded. The colliding files are byte-identical (equal size AND equal sha256 in MANIFEST-ORPHANS.md), so the collapse is lossless - no object is lost, it is just stored once.",
+    "rationale": "The 4 orphan prefixes have no owning user, so foldername(name)[1] = auth.uid() can never pass for them under any mapping. Rather than drop them (leaving 75 recorded orphans permanently unreadable) they are reassigned to temney's new uuid. 775 B total across 6 distinct tiny test fixtures (test.jpg, test.png, test2-4.jpg, obalka-test.jpg) is not worth blocking the import on. Decision is recorded here so the media upload job and any future audit agree.",
     "recorded_in": "migrace/databaze/MANIFEST-ORPHANS.md"
+  },
+  "media_upload_outcome": {
+    "status": "complete",
+    "total_objects": 160,
+    "objects_by_bucket": { "songcraft": 115, "songcraft-web": 45 },
+    "total_bytes": 1044004204,
+    "objects_with_old_prefix": 0,
+    "note": "Recorded outcome of the media upload job for target project gpgbgjxeybfncrexrpbr. objects_with_old_prefix = 0 is the acceptance criterion: every uploaded key starts with the new uuid, so foldername(name)[1] = auth.uid() holds for every row imported from inserts-remapped.sql. This figure is what proved the 12/1550 orphan totals above were unreachable and must not be summed from the per-prefix legacy counts."
   },
   "path_columns_requiring_prefix_rewrite": [
     { "table": "agent_image_assets", "column": "base_image_path", "populated": 2, "old_prefixed": 2 },
