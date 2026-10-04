@@ -29,6 +29,10 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_ID: ${{ vars.SUPABASE_PROJECT_ID }}
+      # Stejná hodnota jiným názvem: `bundle-edge-functions.mjs` čte
+      # `SUPABASE_PROJECT_REF`. Odvozujeme ji z téhož `vars`, aby se
+      # ref nemohl rozejít s tím, co dostává `supabase` CLI a `supabase secrets`.
+      SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_ID }}
       SONGCRAFT_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SONGCRAFT_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
       SONGCRAFT_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -54,6 +58,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      # `deno bundle` je to, co z `_shared/` a `jsr:` udělá nasažitelný
+      # balíček. Bez Dena by `bundle-edge-functions.mjs` spadl na
+      # chybějícím binárku. Docker sem nepotřebujeme a nechceme.
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
 
       - name: Preflight legacy storage paths
         run: node scripts/apply-migrations.mjs --preflight
@@ -137,23 +149,25 @@ jobs:
 
       - name: Deploy agent functions
         run: |
-          supabase functions deploy --use-api agent-orchestrator --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api agent-confirm --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-media --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api youtube-publish --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api youtube-sync-stats --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy --use-api youtube-publish-scheduler --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy --use-api youtube-oauth-start --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api youtube-status --project-ref "$SUPABASE_PROJECT_ID"
-          # Veřejné právní stránky pro Google OAuth consent screen. Bez JWT,
-          # protože do nich musí Googlebot.
-          supabase functions deploy --use-api legal --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy --use-api youtube-oauth-callback --project-ref "$SUPABASE_PROJECT_ID" --no-verify-jwt
-          supabase functions deploy --use-api songcraft-youtube --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api video-renderer-dispatch --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-cover-ai --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-copywriter --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-imports --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-rhymes --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-utilities --project-ref "$SUPABASE_PROJECT_ID"
-          supabase functions deploy --use-api songcraft-studio-assistant --project-ref "$SUPABASE_PROJECT_ID"
+          # `supabase functions deploy --use-api` NASAZÍ SUROVÝ `index.ts`.
+          # Management API bere v poli `body` JEDINÝ soubor, takže CLI musí
+          # balíček sestavit — v režimu `--use-api` ho ale nesestaví. Do
+          # produkce tak jde relativní import do `_shared/` (který se
+          # nenese) a 34 specifikátorů `jsr:` (které Edge Runtime
+          # neresolvuje). Obojí = 503 BOOT_ERROR ještě před prvním řádkem
+          # handleru. Proto to nebylo vidět: brána vrací 200/401 i pro
+          # mrtvou funkci, rozbité tělo se projeví až při volání.
+          # Takto to stálo 17 z 18 funkcí.
+          #
+          # `scripts/bundle-edge-functions.mjs` je jediné místo, kde se to
+          # dá udělat správně: sestaví balíček (`deno bundle`), přepíše
+          # `jsr:`→`npm:`, odstraní typové `.d.ts` importy a TVRDĚ selže
+          # na jakýkoli zbytek. Nasazení jde PATCHem (POST pro update
+          # odmítá s 400) a PŘED odesláním fail-closed ověří živý
+          # `verify_jwt` proti tabulce ve skriptu.
+          #
+          # Skript vrací 1 na jakoukoli chybu — sbalení, acceptance test,
+          # rozcházku verify_jwt i neúspěšný HTTP PATCH. `set -e` je
+          # implicitní (bash, `run` bez shell override), takže job selže a
+          # rozbité balíčky se do produkce nedostanou.
+          node scripts/bundle-edge-functions.mjs --deploy
