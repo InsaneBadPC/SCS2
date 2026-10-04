@@ -3,24 +3,32 @@ name: Build Android APK
 # Každá změna aplikace (klient, konfigurace, závislosti) vygeneruje nové APK a
 # zveřejní ho jako GitHub release `app-vX.Y.Z`. Aplikace si ho pak sama nabídne
 # přes `lib/app-update.ts` (banner + ruční kontrola v Nastavení).
+#
+# APK se nesmí vydat, dokud hermetic CI (`pnpm check` + `pnpm lint` + `pnpm test`
+# + web export) neprode `success`. `needs:` se resolvuje POUZE v rámci jednoho
+# souboru, takže gate na `ci.yml` nelze vyjádřit job závislostí — používáme
+# `workflow_run` nad workflowem `SongCraft CI` (řetězec musí být identický s
+# `name:` v ci.yml) a podmínku na `conclusion` na úrovni jobu.
+#
+# Důsledky `workflow_run`, které je nutné kompenzovat:
+#   * workflow se spouští z výchozí větve a `github.ref` ukazuje na ni, takže
+#     checkoutujeme přesný commit, který CI reálně testovalo
+#     (`workflow_run.head_sha`) — jinak by se na `dev/ai-manager-studio` sestavil
+#     kód z `main`;
+#   * `workflow_run` nemá filtr `paths` (podmínka se vrací na větev spuštěného
+#     běhu, ne na filtrování souborů), takže relevance změn se v triggeru vyjádřit
+#     nedá a každý green CI push na `main`/`dev/ai-manager-studio` vydá APK;
+#   * `workflow_run` běží s právy repozitáře, takže nesmí reagovat na
+#     `pull_request` běhy (fork by tak dostal podpisové secrets) — proto je
+#     v podmínce jobu `workflow_run.event == 'push'`;
+#   * `workflow_dispatch` zůstává pro ruční release.
 on:
-  push:
+  workflow_run:
+    workflows: ["SongCraft CI"]
+    types: [completed]
     branches:
       - dev/ai-manager-studio
       - main
-    paths:
-      - "app/**"
-      - "components/**"
-      - "hooks/**"
-      - "lib/**"
-      - "shared/**"
-      - "constants/**"
-      - "assets/**"
-      - "app.config.ts"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "scripts/configure-android-signing.mjs"
-      - ".github/workflows/build-apk.yml"
   workflow_dispatch:
     inputs:
       force_version:
@@ -32,12 +40,19 @@ permissions:
   contents: write
 
 concurrency:
-  group: apk-${{ github.ref }}
+  group: apk-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: Build and publish APK
+    # Hermetic CI musí projít, než se vydá APK, který si uživatel ihned
+    # instaluje přes app-update.ts. Ruční `workflow_dispatch` je výjimka — ruční
+    # release je vědomá akce obsluhy.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -45,9 +60,13 @@ jobs:
       CI_KEYSTORE_B64: ${{ secrets.CI_KEYSTORE }}
       CI_KEYSTORE_PASS: ${{ secrets.CI_KEYSTORE_PASS }}
       CI_KEY_ALIAS: ${{ secrets.CI_KEY_ALIAS }}
+      # Commit, který prošel CI — zároveň zdroj pro release notes a pro tag.
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -122,11 +141,13 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Publish release
+        # Gate na CI je nyní na úrovni jobu (`if:` výše); krok běží vždy, když
+        # job běží, ať už jde o green CI push, nebo o ruční dispatch.
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
-          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_SHA: ${{ env.SOURCE_SHA }}
         run: |
           set -euo pipefail
           apk="android/app/build/outputs/apk/release/app-release.apk"

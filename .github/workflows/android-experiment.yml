@@ -1,7 +1,14 @@
 name: Build experimental Android APK
 
 on:
-  push:
+  # Stejný gate jako build-apk.yml: `needs:` se resolvuje jen uvnitř jednoho
+  # souboru, takže se čeká na `workflow_run` (viz `name:` v ci.yml) a hotovo se
+  # ověřuje až v podmínce jobu. `branches:` filtruje běhy CI podle větve,
+  # `workflow_run.event == 'push'` v podmínce jobu zabraňuje, aby fork přes PR
+  # spustil build s právy repozitáře.
+  workflow_run:
+    workflows: ["SongCraft CI"]
+    types: [completed]
     branches:
       - main
   workflow_dispatch:
@@ -11,11 +18,23 @@ permissions:
 
 jobs:
   build-apk:
+    name: Build experimental Android APK
+    # Experimentální APK se nikdy nesmí vydávat pod stejným `app-v*` tagem jako
+    # build-apk.yml. Zároveň musí čekat na hermetic CI — jinak se může
+    # experimentální build zapsat na hlavní větev přes chybný kód.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Checkout experiment
         uses: actions/checkout@v4
+        with:
+          # Pod `workflow_run` je výchozí checkout větev `default_branch`, ne
+          # commit, který CI otestovalo.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -66,13 +85,20 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: Publish update release
-        if: github.ref == 'refs/heads/main'
+        # Větev, ze které se experimentální release vydává: u `workflow_run` je
+        # to větev spuštěného CI běhu (`github.ref` ukazuje na výchozí větev),
+        # u ručního dispatchu reference, ze které bylo spuštěno.
+        if: >-
+          github.event_name == 'workflow_dispatch'
+          ? github.ref == 'refs/heads/main'
+          : github.event.workflow_run.head_branch == 'main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: app-v${{ steps.app-version.outputs.version }}
-          name: SongCraft Studio v${{ steps.app-version.outputs.version }}
+          tag_name: experimental-v${{ steps.app-version.outputs.version }}
+          name: SongCraft Studio experiment v${{ steps.app-version.outputs.version }}
           body: |
-            Automatická aktualizace SongCraft Studio ${{ steps.app-version.outputs.version }}.
-            Aplikace si tuto verzi nabídne sama přímo v Nastavení (nebo po spuštění).
+            Experimentální sestavení APK (debug podpis, žádný release klíč).
+            Není určeno k instalaci přes app-update.ts — ruční stažení a
+            kontrolovaná instalace. Může se lišit podepisem od `app-v*` release.
           files: android/app/build/outputs/apk/release/app-release.apk
           fail_on_unmatched_files: true

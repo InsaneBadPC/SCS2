@@ -81,15 +81,8 @@ jobs:
           test -n "$SONGCRAFT_SUPABASE_URL"
           test -n "$SONGCRAFT_SUPABASE_ANON_KEY"
           test -n "$SONGCRAFT_SERVICE_ROLE_KEY"
-          test -n "$GOOGLE_AI_STUDIO_KEY"
-          test -n "$YOUTUBE_CLIENT_ID"
-          test -n "$YOUTUBE_CLIENT_SECRET"
-          test -n "$YOUTUBE_REDIRECT_URI"
-          test -n "$SONGCRAFT_APP_REDIRECT_URL"
           test -n "$SONGCRAFT_ALLOWED_USER_IDS"
           test -n "$SONGCRAFT_ALLOWED_EMAILS"
-          test -n "$SYNC_STATS_CRON_SECRET"
-          test -n "$PUBLISH_SCHEDULER_SECRET"
           supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" \
             "SONGCRAFT_SUPABASE_URL=$SONGCRAFT_SUPABASE_URL" \
             "SONGCRAFT_SUPABASE_ANON_KEY=$SONGCRAFT_SUPABASE_ANON_KEY" \
@@ -97,15 +90,47 @@ jobs:
             "SUPABASE_URL=$SONGCRAFT_SUPABASE_URL" \
             "SUPABASE_ANON_KEY=$SONGCRAFT_SUPABASE_ANON_KEY" \
             "SUPABASE_SERVICE_ROLE_KEY=$SONGCRAFT_SERVICE_ROLE_KEY" \
-            "GOOGLE_AI_STUDIO_KEY=$GOOGLE_AI_STUDIO_KEY" \
-            "YOUTUBE_CLIENT_ID=$YOUTUBE_CLIENT_ID" \
-            "YOUTUBE_CLIENT_SECRET=$YOUTUBE_CLIENT_SECRET" \
-            "YOUTUBE_REDIRECT_URI=$YOUTUBE_REDIRECT_URI" \
-            "SONGCRAFT_APP_REDIRECT_URL=$SONGCRAFT_APP_REDIRECT_URL" \
             "SONGCRAFT_ALLOWED_USER_IDS=$SONGCRAFT_ALLOWED_USER_IDS" \
-            "SONGCRAFT_ALLOWED_EMAILS=$SONGCRAFT_ALLOWED_EMAILS" \
-            "SYNC_STATS_CRON_SECRET=$SYNC_STATS_CRON_SECRET" \
-            "PUBLISH_SCHEDULER_SECRET=$PUBLISH_SCHEDULER_SECRET"
+            "SONGCRAFT_ALLOWED_EMAILS=$SONGCRAFT_ALLOWED_EMAILS"
+          # YouTube OAuth, Gemini AI a cron tajné hodnoty jsou záměrně odloženy
+          # (postponed by design). Nastaví se až poté, co budou k dispozici
+          # v GitHub secrets — jejich absence nesmí zablokovat deploy
+          # zbývajících funkcí. Žádná tajná hodnota se nenastavuje prázdná.
+          if [ -n "$GOOGLE_AI_STUDIO_KEY" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "GOOGLE_AI_STUDIO_KEY=$GOOGLE_AI_STUDIO_KEY"
+          else
+            echo "GOOGLE_AI_STUDIO_KEY není nastaven; profil ai zůstává odložen (postponed)."
+          fi
+          if [ -n "$YOUTUBE_CLIENT_ID" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "YOUTUBE_CLIENT_ID=$YOUTUBE_CLIENT_ID"
+          else
+            echo "YOUTUBE_CLIENT_ID není nastaven; profil youtube zůstává odložen (postponed)."
+          fi
+          if [ -n "$YOUTUBE_CLIENT_SECRET" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "YOUTUBE_CLIENT_SECRET=$YOUTUBE_CLIENT_SECRET"
+          else
+            echo "YOUTUBE_CLIENT_SECRET není nastaven; profil youtube zůstává odložen (postponed)."
+          fi
+          if [ -n "$YOUTUBE_REDIRECT_URI" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "YOUTUBE_REDIRECT_URI=$YOUTUBE_REDIRECT_URI"
+          else
+            echo "YOUTUBE_REDIRECT_URI není nastaven; profil youtube zůstává odložen (postponed)."
+          fi
+          if [ -n "$SONGCRAFT_APP_REDIRECT_URL" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "SONGCRAFT_APP_REDIRECT_URL=$SONGCRAFT_APP_REDIRECT_URL"
+          else
+            echo "SONGCRAFT_APP_REDIRECT_URL není nastaven; profil youtube zůstává odložen (postponed)."
+          fi
+          if [ -n "$SYNC_STATS_CRON_SECRET" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "SYNC_STATS_CRON_SECRET=$SYNC_STATS_CRON_SECRET"
+          else
+            echo "SYNC_STATS_CRON_SECRET není nastaven; profil cron zůstává odložen (postponed)."
+          fi
+          if [ -n "$PUBLISH_SCHEDULER_SECRET" ]; then
+            supabase secrets set --project-ref "$SUPABASE_PROJECT_ID" "PUBLISH_SCHEDULER_SECRET=$PUBLISH_SCHEDULER_SECRET"
+          else
+            echo "PUBLISH_SCHEDULER_SECRET není nastaven; profil cron zůstává odložen (postponed)."
+          fi
 
       - name: Verify Edge Function secret names
         run: node scripts/verify-edge-secrets.mjs
