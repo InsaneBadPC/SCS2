@@ -10,16 +10,21 @@
 //     (jména se opakují mezi lidmi, shoda jména by přepsala cizí účet),
 //   * existující účet se nikdy neupravuje: shoda = no-op, rozdíl = hlášení
 //     a přeskočení; zápis `PUT /auth/v1/admin/users/{id}` tu není a nesmí
-//     se přidat, protože přepsal by heslo i cizí `user_metadata`,
+//     se přidat, protože přepsal by cizí `user_metadata` (a heslo by přepsal
+//     jen kdyby bylo v těle požadavku — jeho sem patřit nesmí),
+//   * hlášení rozdílů má TŘI koše, ne jeden (viz `describeDrift`), aby
+//     zdravý účet s jedním kosmetickým nedostatkem nebyl hlášený jako rozpad,
 //   * heslo, service_role klíč ani PAT se nikdy nevypisují (viz `redact`).
 //
 //   node scripts/provision-private-accounts.mjs --i-know-this-touches-live-accounts
 //
-// Exit code: 0 = vše v pořádku, 1 = odmítnuto / nesoulad, 2 = chybné použití.
+// Exit code: 0 = vše v pořádku (případně jen metadata k doplnění),
+//            1 = odmítnuto / nesoulad,
+//            2 = chybné použití.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OPT_IN_FLAG = '--i-know-this-touches-live-accounts';
@@ -181,24 +186,109 @@ function normalizeEmail(email) {
 }
 
 /** Rozhodující je e-mail. `display_name` se nikdy neporovnává. */
-function findByEmail(users, email) {
+export function findByEmail(users, email) {
   const wanted = normalizeEmail(email);
   return users.find((user) => normalizeEmail(user?.email) === wanted);
 }
 
-function describeDrift(existing, account) {
-  const drift = [];
+/**
+ * POTVRZENÍ E-MAILU — tady byla chyba, která hlásila falešné drifty.
+ *
+ * GoTrue admin API (`GET /auth/v1/admin/users` i `.../users/{id}`) při čtení
+ * vrací pole **`email_confirmed_at`** (ISO 8601, nebo `null`). Pole
+ * `email_confirm` vrací jen jako VSTUP při vytvoření
+ * (`POST /auth/v1/admin/users`) — ve výsledku ho není nikdy, takže
+ * `existing.email_confirm !== true` byla pravda pro KAŽDÝ účet a skript
+ * považoval tři zdravé účty za rozpad, skončil exit 1 a vypsal
+ * „ROZDÍLY, KTERÉ SE NEPŘEPÍŠOU". Skript, který křičí „všechno je rozbité"
+ * na zdravém projektu, se pak buď ignoruje, nebo použije k něčemu horšímu.
+ * (Ověřeno živým dotazem 2026-10-04: `email_confirm` chybí ve všech 3
+ * živých účtech, `email_confirmed_at` je vyplněné u všech 3.)
+ *
+ * Jsou tu TŘI stavy, ne dva. `unknown` = API nevrátilo žádné z polí (nebo
+ * vrátilo nesmysl). To je chyba skriptu proti API, ne rozpadlý účet, takže se
+ * hlásí zvlášť — ale „nevím" nesmí projít jako „v pořádku", protože by to
+ * přesně zopakovalo původní poplach.
+ *
+ * @returns {{state: "confirmed"|"unconfirmed"|"unknown", field: string|null}}
+ */
+export function readEmailConfirmation(user) {
+  // 1) Dokumentované čtené pole GoTrue — to je to, na co se ptáme.
+  if (user && Object.hasOwn(user, 'email_confirmed_at')) {
+    const value = user.email_confirmed_at;
+    if (value === null || value === undefined || value === '') {
+      return { state: 'unconfirmed', field: 'email_confirmed_at' };
+    }
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return { state: 'confirmed', field: 'email_confirmed_at' };
+    }
+    if (typeof value === 'string' && !Number.isNaN(Date.parse(value))) {
+      return { state: 'confirmed', field: 'email_confirmed_at' };
+    }
+    return { state: 'unknown', field: 'email_confirmed_at' };
+  }
+  // 2) Starší GoTrue build nebo proxy, co boolean vrací. Tolerujeme, ale
+  //    NEPREFERUJEME ho — pokud je jednou přítomno, vyhraje (1).
+  if (user && Object.hasOwn(user, 'email_confirm')) {
+    return user.email_confirm === true
+      ? { state: 'confirmed', field: 'email_confirm' }
+      : { state: 'unconfirmed', field: 'email_confirm' };
+  }
+  return { state: 'unknown', field: null };
+}
+
+/**
+ * Rozdělení nálezu na tři koše, aby zdravý účet nevypadal jako rozpadlý:
+ *
+ *   `conflict`     skutečný rozpor s `lib/accounts.ts` — jiné `id`,
+ *                  nepotvrzený e-mail, nebo `display_name`, který EXISTUJE
+ *                  a jiný. Tady se nic nepřepíše, exit je 1.
+ *   `adoptable`    `display_name` chybí. Účet je zdravý — jen nemá jméno.
+ *                  Hláseno zvlášť, exit NEselhá (viz níže).
+ *   `unverifiable` API nevrátilo pole, které skript čte. Exit 1, protože
+ *                  „nevím" není totéž co „v pořádku".
+ *
+ * PROČ `adoptable` NENÍ drift a PROČ sem display_name NEZAPÍŠEME:
+ * chybějící jméno nemá vliv na běh. Přihlášení jde podle e-mailu
+ * (`lib/accounts.ts` + `findAccountByEmail`) a `hooks/use-auth.ts:26` už teď
+ * padá na bezpečný default, když `user_metadata.display_name` není string.
+ * Doplnění by navíc znamenalo `PUT /auth/v1/admin/users/{id}` na živý účet
+ * jen kvůli kosmetice — a to je přesně ten zápis, kvůli kterému má tenhle
+ * skript zákaz na `PUT`. Jedno ruční doplnění v Dashboardu je levnější
+ * riziko než automatická mutace produkčního auth stavu.
+ */
+export function describeDrift(existing, account) {
+  const conflict = [];
+  const adoptable = [];
+  const unverifiable = [];
+
   if (existing.id !== account.id) {
-    drift.push(`id v Supabase (${existing.id}) nesouhlasí s lib/accounts.ts (${account.id})`);
+    conflict.push(`id v Supabase (${existing.id}) nesouhlasí s lib/accounts.ts (${account.id})`);
   }
-  if (existing.email_confirm !== true) {
-    drift.push('e-mail není potvrzený (email_confirm !== true)');
+
+  const confirmation = readEmailConfirmation(existing);
+  if (confirmation.state === 'unconfirmed') {
+    conflict.push(`e-mail není potvrzený (${confirmation.field} je prázdný)`);
+  } else if (confirmation.state === 'unknown') {
+    unverifiable.push(
+      confirmation.field
+        ? `${confirmation.field} má neočekávanou hodnotu — potvrzení e-mailu nelze rozhodnout`
+        : 'GoTrue nevrátil ani email_confirmed_at, ani email_confirm — potvrzení e-mailu nelze ověřit',
+    );
   }
+
   const displayName = existing.user_metadata?.display_name;
-  if (displayName !== account.name) {
-    drift.push(`user_metadata.display_name je ${JSON.stringify(displayName ?? null)}, v lib/accounts.ts je ${JSON.stringify(account.name)}`);
+  if (displayName === undefined || displayName === null || displayName === '') {
+    adoptable.push(
+      `user_metadata.display_name chybí, v lib/accounts.ts je ${JSON.stringify(account.name)} — účet funguje, jméno doplní Dashboard`,
+    );
+  } else if (displayName !== account.name) {
+    conflict.push(
+      `user_metadata.display_name je ${JSON.stringify(displayName)}, v lib/accounts.ts je ${JSON.stringify(account.name)}`,
+    );
   }
-  return drift;
+
+  return { conflict, adoptable, unverifiable };
 }
 
 async function listUsers(apiBaseUrl, headers) {
@@ -210,6 +300,9 @@ async function listUsers(apiBaseUrl, headers) {
 
 async function createMissingAccount(apiBaseUrl, headers, account, password) {
   // Tělo obsahuje heslo — nikdy se nevypisuje, ani v chybě.
+  // `email_confirm: true` ZDE je správně: to je vstupní pole pro
+  // vytvoření. Asymetrie je záměrná — při čtení ho GoTrue nevrací
+  // (vrací `email_confirmed_at`, viz `readEmailConfirmation`).
   const response = await fetch(`${apiBaseUrl}/auth/v1/admin/users`, {
     method: 'POST',
     headers,
@@ -262,6 +355,8 @@ async function main() {
   let unchanged = 0;
   const created = [];
   const drifted = [];
+  const adoptable = [];
+  const unverifiable = [];
 
   for (const account of accounts) {
     const existing = findByEmail(users, account.email);
@@ -271,29 +366,61 @@ async function main() {
       created.push(`${await createMissingAccount(apiBaseUrl, headers, account, password)} (heslo z ${variable})`);
       continue;
     }
-    const drift = describeDrift(existing, account);
-    if (drift.length > 0) {
-      drifted.push({ account, drift });
+    const verdict = describeDrift(existing, account);
+    if (verdict.unverifiable.length > 0) unverifiable.push({ account, lines: verdict.unverifiable });
+    if (verdict.conflict.length > 0) {
+      drifted.push({ account, lines: verdict.conflict });
+      continue;
+    }
+    if (verdict.adoptable.length > 0) {
+      adoptable.push({ account, lines: verdict.adoptable });
       continue;
     }
     unchanged += 1;
-    say(`  beze změny: ${account.name} <${account.email}> (e-mail, id i display_name sedí)`);
+    say(`  beze změny: ${account.name} <${account.email}> (e-mail potvrzený, id i display_name sedí)`);
   }
 
   for (const message of created) say(`  nový účet: ${message}`);
   say('');
-  say(`  Projekt ${projectRef}: ${unchanged} účtů beze změny, ${created.length} nových, ${drifted.length} k nahlášení.`);
+  say(
+    `  Projekt ${projectRef}: ${unchanged} účtů beze změny, ${created.length} nových, ` +
+      `${adoptable.length} k doplnění metadat, ${drifted.length} k nahlášení.`,
+  );
   say(`  V projektu je navíc ${extraUsers} účtů mimo seznam; tenhle skript je nemaže ani neupravuje.`);
-  say('');
 
-  if (drifted.length === 0) return;
+  if (adoptable.length > 0) {
+    say('');
+    say('  METADATA DOPLNÍM (účet je zdravý, jen nemá jméno — tímto skriptem se NEdoplní):');
+    for (const { account, lines } of adoptable) {
+      say(`    - ${account.name} <${account.email}>`);
+      for (const line of lines) say(`        · ${line}`);
+    }
+  }
 
-  shout('  ROZDÍLY, KTERÉ SE NEPŘEPÍŠOU (řeš ručně v Supabase Dashboard):');
-  for (const { account, drift } of drifted) {
-    shout(`    - ${account.name} <${account.email}>`);
-    for (const line of drift) shout(`        · ${line}`);
+  if (drifted.length === 0 && unverifiable.length === 0) return;
+
+  if (unverifiable.length > 0) {
+    shout('');
+    shout('  NELZE OVĚŘIT (chyba skriptu proti API, ne rozpad účtu):');
+    for (const { account, lines } of unverifiable) {
+      shout(`    - ${account.name} <${account.email}>`);
+      for (const line of lines) shout(`        · ${line}`);
+    }
+  }
+
+  if (drifted.length > 0) {
+    shout('');
+    shout('  ROZDÍLY, KTERÉ SE NEPŘEPÍŠOU (řeš ručně v Supabase Dashboard):');
+    for (const { account, lines } of drifted) {
+      shout(`    - ${account.name} <${account.email}>`);
+      for (const line of lines) shout(`        · ${line}`);
+    }
   }
   process.exit(1);
 }
 
-await main();
+// Běh jen jako skript. Import tohoto souboru (replay driftu, test) nesmí
+// spustit `main` — jinak by „test" sahal na živé účty.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
