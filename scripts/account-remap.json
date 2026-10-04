@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "artifact": "SCS2 legacy account + storage-prefix remap",
+  "purpose": "Single source of truth for rewriting legacy Supabase user ids and storage object key prefixes when importing SCS2 legacy data into the new project. Consumed by the DB row import (generates migrace/databaze/DB/sql/inserts-remapped.sql) AND by the parallel media upload job. Both jobs MUST read this file; the mapping must never be hardcoded in either job.",
+  "source_project_ref": "hfykngbhcxmnpxvjagoj",
+  "target_project_ref": "gpgbgjxeybfncrexrpbr",
+  "source_export": {
+    "sql": "migrace/databaze/DB/sql/inserts.sql",
+    "json": "migrace/databaze/DB/json/*.json",
+    "generated_at": "2026-10-02T21:52:51.823900Z",
+    "auth_users": "migrace/databaze/AUTH-USERS.md",
+    "manifests": [
+      "migrace/databaze/MANIFEST.csv",
+      "migrace/databaze/MANIFEST-ORPHANS.md",
+      "migrace/databaze/MANIFEST-DANGLING.md"
+    ]
+  },
+  "prefix_rule": {
+    "statement": "A legacy storage path is '<old_user_uuid>/<rest>'. It MUST be rewritten to '<new_user_uuid>/<rest>'; only the first path segment changes, the remainder is byte-identical.",
+    "why": "Both sides enforce the owner prefix. App: lib/storage-paths.ts assertOwnedStoragePath requires storagePath === userId || storagePath.startsWith(userId + '/'). DB: (storage.foldername(name))[1] = auth.uid()::text in supabase/migrations/20260925110000_core_schema_bootstrap.sql:266-273 and the INSERT trigger in supabase/migrations/20260930000000_storage_guard_mime_fix.sql:41 raises on mismatch.",
+    "consequence_if_skipped": "A user_id-only remap inserts all rows with no error but yields 0 visible albums and 403 on every cover.",
+    "storage_guard_is_insert_only": "The guard trigger fires on storage.objects INSERT. DB row text alone never trips it, so the DB import can succeed while every asset 403s at read time. The storage object key must be uploaded under the new prefix by the media upload job."
+  },
+  "accounts": [
+    {
+      "label": "temney",
+      "old_user_id": "99dacb87-b331-4069-9b15-61c06bd76bdd",
+      "new_user_id": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
+      "kind": "user",
+      "placeholder_token": "NEW_UUID_TEMNEY_PLACEHOLDER",
+      "legacy_source_rows": 251,
+      "note": "Primary account. Owns 251 of 280 source rows and 102 media files. All sc_lyrics/sc_songs/sc_audio_versions content of substance. Largest surface, so this prefix carries both the bulk content and the assigned orphans below."
+    },
+    {
+      "label": "verca",
+      "old_user_id": "f28d7833-3c74-483d-8620-2316f79f296c",
+      "new_user_id": "236aa29b-215f-4d88-ab31-a89ec6e871f5",
+      "kind": "user",
+      "placeholder_token": "NEW_UUID_VERCA_PLACEHOLDER",
+      "legacy_source_rows": 29,
+      "note": "Second account. Owns 29 of 280 source rows and 7 media files. Present in sc_lyrics (13), sc_songs (12), sc_audio_versions (1), sc_cover_jobs (3)."
+    },
+    {
+      "label": "dj-palacinka",
+      "old_user_id": "daa9c6dc-eb23-48c2-b422-2a6e145c80f8",
+      "new_user_id": "911f9648-6247-4387-81b5-7526290226a5",
+      "kind": "user",
+      "placeholder_token": "NEW_UUID_DJ_PALACINKA_PLACEHOLDER",
+      "legacy_source_rows": 0,
+      "note": "Third account exists in both auth.users tables but owns 0 source rows and 0 media objects. Mapping recorded for completeness so the media upload job has no gap; nothing to rewrite for it."
+    }
+  ],
+  "orphan_prefixes": [
+    {
+      "old_prefix": "6fa1efe4-3201-41eb-973e-612b8a56bf4a",
+      "new_prefix": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
+      "assigned_to": "temney",
+      "kind": "orphan",
+      "object_count": 1,
+      "total_bytes": 140,
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid so the objects become readable. 1 object, 140 B."
+    },
+    {
+      "old_prefix": "8a3cf566-2f3b-4c8a-af89-49cff431d35d",
+      "new_prefix": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
+      "assigned_to": "temney",
+      "kind": "orphan",
+      "object_count": 5,
+      "total_bytes": 635,
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 5 test.jpg/test.png/test2-4.jpg fixtures."
+    },
+    {
+      "old_prefix": "93b3821c-54c9-406e-9632-0986ed24bc5d",
+      "new_prefix": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
+      "assigned_to": "temney",
+      "kind": "orphan",
+      "object_count": 1,
+      "total_bytes": 140,
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 1 object, 140 B."
+    },
+    {
+      "old_prefix": "bf6ecfb6-95d1-47f7-b04b-d88464da52db",
+      "new_prefix": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
+      "assigned_to": "temney",
+      "kind": "orphan",
+      "object_count": 5,
+      "total_bytes": 635,
+      "note": "Orphan in MANIFEST-ORPHANS.md: has no owning auth.users row, so foldername(name)[1] = auth.uid() could never pass for it. Assigned to temney's new uuid. 5 test.jpg/test.png/test2-4.jpg fixtures."
+    }
+  ],
+  "orphan_assignment_decision": {
+    "assigned_to": "temney",
+    "new_prefix": "296b2989-d9d4-455c-ae08-c1271b9f29d3",
+    "total_prefixes": 4,
+    "total_objects": 12,
+    "total_bytes": 1550,
+    "rationale": "The 4 orphan prefixes have no owning user, so foldername(name)[1] = auth.uid() can never pass for them under any mapping. Rather than drop them (leaving 75 recorded orphans permanently unreadable) they are reassigned to temney's new uuid. 1550 B total across 12 tiny test fixtures (test.jpg, test.png, test2-4.jpg, obalka-test.jpg) is not worth blocking the import on. Decision is recorded here so the media upload job and any future audit agree.",
+    "recorded_in": "migrace/databaze/MANIFEST-ORPHANS.md"
+  },
+  "path_columns_requiring_prefix_rewrite": [
+    { "table": "agent_image_assets", "column": "base_image_path", "populated": 2, "old_prefixed": 2 },
+    { "table": "agent_image_assets", "column": "final_image_path", "populated": 2, "old_prefixed": 2 },
+    { "table": "agent_videos", "column": "audio_storage_path", "populated": 16, "old_prefixed": 16 },
+    { "table": "agent_videos", "column": "output_path", "populated": 13, "old_prefixed": 13 },
+    { "table": "agent_videos", "column": "storage_path", "populated": 19, "old_prefixed": 19 },
+    { "table": "sc_albums", "column": "cover_path", "populated": 6, "old_prefixed": 6 },
+    { "table": "sc_audio_versions", "column": "original_storage_path", "populated": 23, "old_prefixed": 23 },
+    { "table": "sc_audio_versions", "column": "storage_path", "populated": 23, "old_prefixed": 23 },
+    { "table": "sc_audio_versions", "column": "tagged_storage_path", "populated": 3, "old_prefixed": 3 },
+    { "table": "sc_cover_jobs", "column": "cover_path", "populated": 5, "old_prefixed": 5 },
+    { "table": "sc_lyrics", "column": "cover_path", "populated": 21, "old_prefixed": 21 },
+    { "table": "sc_songs", "column": "cover_path", "populated": 19, "old_prefixed": 19 },
+    { "table": "sc_video_jobs", "column": "video_path", "populated": 23, "old_prefixed": 21 },
+    { "table": "youtube_publications", "column": "thumbnail_path", "populated": 1, "old_prefixed": 1 }
+  ],
+  "path_columns_total": 14,
+  "path_values_old_prefixed_total": 174,
+  "path_values_in_jsonb_total": 2,
+  "path_values_in_jsonb_detail": {
+    "table": "agent_action_log",
+    "column": "payload",
+    "count": 2,
+    "note": "Two generate_song_artwork audit rows embed a storage path in payload->>'path' as '99dacb87-.../agent-artwork/<song>-<uuid>.jpg'. Not a path column, so not counted in path_columns_total, but it is the same prefix and is rewritten by the same mapping so the audit log does not point at a key that will no longer exist."
+  },
+  "path_columns_present_in_target_but_empty_in_source": [
+    { "table": "agent_videos", "column": "source_video_path" },
+    { "table": "sc_songs", "column": "source_video_path" },
+    { "table": "agent_media_uploads", "column": "storage_path" },
+    { "table": "motion_recipes", "column": "source_storage_path" }
+  ],
+  "known_dangling_paths": {
+    "count": 7,
+    "table": "sc_video_jobs",
+    "column": "video_path",
+    "recorded_in": "migrace/databaze/MANIFEST-DANGLING.md",
+    "decision": "import_as_is",
+    "note": "These 7 rows reference an mp4 that does not exist on disk. They were already broken in the legacy source; inventing a path would be worse than importing a known-broken reference. The prefix is still rewritten so the rows are internally consistent with the owner prefix. The media upload job must NOT try to satisfy them."
+  },
+  "excluded_tables": [
+    {
+      "table": "youtube_credentials",
+      "source_rows": 1,
+      "carries_secrets": true,
+      "secret_columns": ["access_token", "refresh_token"],
+      "note": "Contains a live Google OAuth access token (ya29.*) and refresh token (1//*) belonging to the OLD Supabase project's YouTube OAuth client. Deliberately NOT imported. MIGRACE-SCS2.md 3.4: old secrets and API keys are never written into the new project. The row must not exist in the new project; re-connect the channel through the new OAuth client instead."
+    },
+    {
+      "table": "youtube_oauth_states",
+      "source_rows": 1,
+      "carries_secrets": true,
+      "secret_columns": ["state_hash", "code_verifier"],
+      "note": "Contains a PKCE code_verifier and its state_hash, plus a redirect_uri pointing at the OLD project host hfykngbhcxmnpxvjagoj.supabase.co. State belongs to the old OAuth client and was already expired (expires_at 2026-09-30). Deliberately NOT imported. MIGRACE-SCS2.md 3.3 lists youtube_oauth_states as not-migrated because states belong to the old client and the new client has new states."
+    }
+  ],
+  "source_row_budget": {
+    "total_rows_in_source": 280,
+    "rows_imported": 278,
+    "rows_excluded": 2,
+    "excluded_breakdown": "1 x youtube_credentials + 1 x youtube_oauth_states, both for carrying old-project OAuth credentials"
+  },
+  "sql_literal_fixes": {
+    "problem": "The legacy exporter emitted a trailing ::jsonb cast on 177 values. It applied the cast inconsistently (28 of 74 sc_lyrics.lyrics values got it, 46 did not), and for values that are JSON strings or plain prose the bare text is not valid JSON, so Postgres aborts the whole import with 22P02 invalid input syntax for type json, CONTEXT 'JSON data, line 1: [Intro...'. Separately, several of those columns are no longer jsonb in the new schema, so the cast targets the wrong type even when the text happens to be valid JSON.",
+    "symptom_observed": "ERROR 22P02 invalid input syntax for type json / DETAIL Token \"Intro\" is invalid. / CONTEXT JSON data, line 1: [Intro... — raised on the first sc_lyrics row. Postgres reports the caret inside the multi-line lyrics literal, which hides the real cause (the ::jsonb on that same value).",
+    "fix": "Classify every ::jsonb value by the LIVE target column type from information_schema.columns on the new project, then act per column. Do not blanket-strip and do not blanket-keep.",
+    "rules": [
+      {
+        "table": "agent_action_log",
+        "column": "payload",
+        "target_type": "jsonb",
+        "action": "keep_cast",
+        "expected_values": 60,
+        "note": "Value is already valid JSON ({\"count\": 13}, {\"path\": \"...\"}). Target really is jsonb. Cast is correct, leave untouched."
+      },
+      {
+        "table": "agent_messages",
+        "column": "content",
+        "target_type": "jsonb",
+        "action": "keep_cast",
+        "expected_values": 16,
+        "note": "Value is already valid JSON ({\"text\": \"...\"}). Target really is jsonb. Cast is correct, leave untouched."
+      },
+      {
+        "table": "sc_lyrics",
+        "column": "lyrics",
+        "target_type": "text",
+        "action": "drop_cast",
+        "expected_values": 28,
+        "note": "Target is text, not jsonb. Underlying literal is plain prose (starts with '['), which is not valid JSON and is what aborts the import. Dropping the cast yields exactly the JSON-source string."
+      },
+      {
+        "table": "sc_lyrics",
+        "column": "style_prompt",
+        "target_type": "text",
+        "action": "drop_cast",
+        "expected_values": 13,
+        "note": "Target is text. Value is plain prose, not valid JSON. Drop the cast."
+      },
+      {
+        "table": "sc_songs",
+        "column": "lyrics",
+        "target_type": "text",
+        "action": "drop_cast",
+        "expected_values": 12,
+        "note": "Target is text. Value is plain prose, not valid JSON. Drop the cast."
+      },
+      {
+        "table": "sc_songs",
+        "column": "style_prompt",
+        "target_type": "text",
+        "action": "drop_cast",
+        "expected_values": 2,
+        "note": "Target is text. Value is plain prose, not valid JSON. Drop the cast."
+      },
+      {
+        "table": "sc_songs",
+        "column": "youtube_tags",
+        "target_type": "text",
+        "action": "drop_cast",
+        "expected_values": 1,
+        "note": "Target is text. The legacy value was a JSON array of tags; dropping the cast stores its JSON text verbatim, which is the faithful text representation. Do not flatten it to a comma list - that would be inventing data."
+      },
+      {
+        "table": "agent_image_assets",
+        "column": "lyric_themes",
+        "target_type": "text[]",
+        "action": "json_array_to_text_array",
+        "expected_values": 3,
+        "note": "Target is text[] (_text), not jsonb. All 3 legacy values are the empty JSON array []. Emit an empty PostgreSQL text array."
+      },
+      {
+        "table": "sc_songs",
+        "column": "style_prompts",
+        "target_type": "text[]",
+        "action": "json_array_to_text_array",
+        "expected_values": 31,
+        "note": "Target is text[] (_text), not jsonb. Legacy value is a JSON array of style prompt strings, some multi-line. Convert element-wise to a PostgreSQL text array so no element is lost or reworded."
+      },
+      {
+        "table": "youtube_publications",
+        "column": "tags",
+        "target_type": "text[]",
+        "action": "json_array_to_text_array",
+        "expected_values": 5,
+        "note": "Target is text[] (_text), not jsonb. Legacy value is a JSON array of tag strings. Convert element-wise."
+      },
+      {
+        "table": "youtube_publications",
+        "column": "playlist_ids",
+        "target_type": "text[]",
+        "action": "json_array_to_text_array",
+        "expected_values": 5,
+        "note": "Target is text[] (_text), not jsonb. Legacy value is a JSON array of playlist id strings. Convert element-wise."
+      },
+      {
+        "table": "youtube_credentials",
+        "column": "scopes",
+        "target_type": "text[]",
+        "action": "excluded_with_table",
+        "expected_values": 0,
+        "note": "The source export has 1 ::jsonb value here, but the whole youtube_credentials table is stripped before cast rewriting, so 0 are expected at rewrite time. Recorded for completeness only; the value never reaches the import."
+      }
+    ],
+    "counts_must_match": "The generator asserts each rule's expected_values against the actual number of ::jsonb values found on that (table, column). A mismatch means the source export changed and the map is stale; the generator fails closed rather than guessing."
+  },
+  "path_value_overrides": {
+    "problem": "2 of the 23 sc_video_jobs rows store an absolute GitHub Releases URL in video_path, not a storage path. songcraft_path_allowed() requires path_value like owner_id::text || '/%', and the BEFORE INSERT trigger sc_catalog_path_guard raises 42501 'Storage path for sc_video_jobs does not belong to its owner'. These two rows cannot be imported with their original value under any mapping.",
+    "decision": "Set video_path to NULL and keep the row. songcraft_path_allowed() returns true for NULL, so the row imports with its status, song_id, version_id and timestamps intact and its FKs satisfied.",
+    "why_not_something_else": "Fabricating '<new_uuid>/videos/<id>.mp4' would produce a row that looks valid, passes every check, and still points at an object that will never exist - strictly worse than an honest NULL, and it would be inventing data. Reusing the error column to stash the URL would be misusing it. The URLs are preserved here instead so they are not lost.",
+    "rows": [
+      {
+        "table": "sc_video_jobs",
+        "row_id": "22ce725e-a4a6-4f12-900b-2dca71172084",
+        "column": "video_path",
+        "original_value": "https://github.com/InsaneBadPC/songcraft-studio/releases/download/songcraft-videos/22ce725e-a4a6-4f12-900b-2dca71172084.mp4",
+        "imported_value": null
+      },
+      {
+        "table": "sc_video_jobs",
+        "row_id": "57843340-3951-48ad-904c-60a484ec8b91",
+        "column": "video_path",
+        "original_value": "https://github.com/InsaneBadPC/songcraft-studio/releases/download/songcraft-videos/57843340-3951-48ad-904c-60a484ec8b91.mp4",
+        "imported_value": null
+      }
+    ],
+    "note": "Distinct from the 7 known-dangling sc_video_jobs rows recorded in MANIFEST-DANGLING.md. Those 7 hold well-formed '<uuid>/videos/<id>.mp4' keys that simply do not exist on disk; they pass the guard and are imported unchanged. These 2 hold external URLs and cannot pass the guard at all."
+  },
+  "consumer_contract": {
+    "db_row_import": "Generate migrace/databaze/DB/sql/inserts-remapped.sql from migrace/databaze/DB/sql/inserts.sql by applying accounts[].placeholder_token and the old_prefix -> new_prefix pairs. Never edit inserts.sql in place; it stays the auditable legacy source.",
+    "media_upload_job": "For every object in the legacy bucket songcraft, replace the first path segment using the same old_prefix -> new_prefix pairs and upload to that key in the new project. Keys must match the DB row text exactly, otherwise foldername(name)[1] = auth.uid() fails and the asset 403s.",
+    "agreement_required": "Both jobs must resolve the mapping from this file at run time. If the two ever disagree, every cover in the app 403s with no DB error to explain it."
+  }
+}
