@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { Platform } from "react-native";
 import { ThemeProvider } from "@/lib/theme-provider";
+import { startRecoveryLinkWatcher } from "@/lib/reset-password";
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
@@ -16,6 +17,10 @@ import type { EdgeInsets, Rect } from "react-native-safe-area-context";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
+
+// Resetovací odkaz z e-mailu musí být slyšen dřív, než se vykreslí jakákoli
+// obrazovka - jinak by ho expo-router zpracoval dřív, než se o něj kdo zeptá.
+startRecoveryLinkWatcher();
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -61,6 +66,8 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="auth" options={{ presentation: "fullScreenModal" }} />
+          {/* Jen deep link z resetovacího e-mailu - viz lib/reset-password.ts. */}
+          <Stack.Screen name="reset-password" options={{ presentation: "fullScreenModal" }} />
         </Stack>
         <StatusBar style="auto" />
       </QueryClientProvider>

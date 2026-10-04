@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { ScreenContainer } from "@/components/screen-container";
 import { STUDIO_ACCOUNTS, type StudioAccount } from "@/lib/accounts";
 import { useColors } from "@/hooks/use-colors";
+import { RESET_LINK_URI } from "@/lib/reset-password";
 import { supabase } from "@/lib/supabase";
 import { OnPrimary, Radius, Space, TouchTarget, Type } from "@/lib/design-tokens";
 
@@ -17,7 +18,7 @@ import { OnPrimary, Radius, Space, TouchTarget, Type } from "@/lib/design-tokens
  */
 
 /** Resetovací odkaz musí jít do scheme z app.config.ts (env.scheme). */
-const RESET_REDIRECT = "songcraftstudio://auth";
+const RESET_REDIRECT = RESET_LINK_URI;
 
 export default function AuthScreen() {
   const colors = useColors();
@@ -62,8 +63,9 @@ export default function AuthScreen() {
 
     Alert.alert(
       "Resetovací odkaz odeslán",
-      "Na " + selected.email + " přišel e-mail s odkazem pro nastavení nového hesla. " +
-        "Původní heslo se nikdy neposílá - Supabase umí uložit jen jeho otisk.",
+      "Odkaz pro nastavení nového hesla jsme poslali na adresu " + selected.email + ". " +
+        "Musí to být adresa vybraného účtu — jinak se reset nevztahuje na tebe. " +
+        "Odkaz otevři na tomhle zařízení, jinak se nedá použít.",
     );
   };
 
@@ -150,6 +152,16 @@ export default function AuthScreen() {
           </Text>
         </Pressable>
 
+        <Pressable
+          onPress={() => router.replace("/reset-password" as never)}
+          style={({ pressed }) => [styles.manualReset, { opacity: pressed || loading ? 0.68 : 1 }]}
+        >
+          <MaterialIcons name="lock" size={16} color={colors.muted} />
+          <Text style={[styles.manualResetText, { color: colors.muted }]}>
+            Už jsi odkaz z e-mailu otevřel? Nastav nové heslo
+          </Text>
+        </Pressable>
+
         <Text style={[styles.note, { color: colors.muted }]}>
           Přístup je omezený na tyto tři účty. Nové účty nelze vytvářet.
         </Text>
@@ -174,5 +186,7 @@ const styles = StyleSheet.create({
   primaryText: { color: OnPrimary, fontSize: 15, fontWeight: "900" },
   reset: { minHeight: TouchTarget, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Space.sm },
   resetText: { ...Type.label },
+  manualReset: { minHeight: TouchTarget, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: Space.sm, paddingHorizontal: Space.sm },
+  manualResetText: { ...Type.caption, lineHeight: 16, textAlign: "center" },
   note: { ...Type.caption, lineHeight: 16, textAlign: "center", marginTop: 2 },
 });
