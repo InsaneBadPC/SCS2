@@ -67,7 +67,7 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
     versionCode,
-    permissions: ["POST_NOTIFICATIONS", "REQUEST_INSTALL_PACKAGES"],
+    permissions: ["REQUEST_INSTALL_PACKAGES"],
     intentFilters: [
       {
         action: "VIEW",
