@@ -21,7 +21,8 @@
  *    průsečíky se vyplní rozsah (sudě-liché pravidlo; pás je jeden
  *    jednoduchý uzavřený prstenec). Vrcholový atribut `t` se přenáší
  *    po hraně a interpoluje lineárně přes rozsah — pásmo tak dostane
- *    hladký gradient cyan → #5FF3FF → oranž podél své délky.
+ *    hladký gradient cyan → #5FF3FF → #FFC53D → oranž podél své délky
+ *    (žlutá zastávka je nutná, jinak by směs v RGB prošla zelenou).
  *    Složitost je O(řádků × průsečíků na řádku), nikoli O(pixelů
  *    × vrcholů) — to je důvod, proč tohle běží, kde per-pixel
  *    distance-test proti 1502 vrcholům visí.
@@ -30,8 +31,8 @@
  *    do hranice. Lem štítku vzniká odchylkou: zaoblený obdélník se
  *    vyplní do masky a 1px zasunutá kopie se z ní vymaže.
  * 4. Vrstvy se skládají v pořadí: štítek (šikmý gradient) →
- *    cyanové světlo → oranžové světlo → lem → pás → koule s
- *    prstencem → jiskry. Každá vrstva se alpha-blenduje
+ *    cyanové světlo → oranžové světlo → lem → pás → prstenec koule
+ *    → plná koule → jiskry. Každá vrstva se alpha-blenduje
  *    (neprůhledné vrstvy píší rovnou, průsvitné blendují).
  * 5. PNG kóduje tento skript sám: 8B signatura, IHDR (8 bit,
  *    typ 6 = RGBA), jeden IDAT (řádky s filtrem 0) a IEND.
@@ -349,6 +350,32 @@ function blendCircle(pixels, sw, sh, cx, cy, r, color, alpha) {
   }
 }
 
+/**
+ * Prstenec: na řádku dva spany, `inner`..`outer`. Nad vnitřním poloměrem je
+ * spán jediný. Vnitřní hrana je tvrdá, vnější antialiasuje supersampling.
+ */
+function blendRing(pixels, sw, sh, cx, cy, rOuter, rInner, color, alpha) {
+  const y0 = Math.max(0, Math.ceil(cy - rOuter - 0.5));
+  const y1 = Math.min(sh - 1, Math.floor(cy + rOuter - 0.5));
+  const innerSq = rInner * rInner;
+  for (let row = y0; row <= y1; row += 1) {
+    const dy = row + 0.5 - cy;
+    const dx = Math.sqrt(Math.max(0, rOuter * rOuter - dy * dy));
+    const [x0, x1] = spanPixels(cx - dx, cx + dx, sw);
+    const base = row * sw;
+    const hole = innerSq - dy * dy;
+    if (hole <= 0) {
+      for (let x = x0; x <= x1; x += 1) blendOne(pixels, (base + x) * 4, color.r, color.g, color.b, alpha);
+      continue;
+    }
+    const [ix0, ix1] = spanPixels(cx - Math.sqrt(hole), cx + Math.sqrt(hole), sw);
+    for (let x = x0; x <= x1; x += 1) {
+      if (x >= ix0 && x <= ix1) continue;
+      blendOne(pixels, (base + x) * 4, color.r, color.g, color.b, alpha);
+    }
+  }
+}
+
 /* --- Zmenšení SS× → výstupní rozlišení -------------------------------- */
 
 /**
@@ -428,11 +455,13 @@ function renderImage(spec) {
     });
     writeRibbon(pixels, sw, sh, pts, mono);
 
-    // Nahrávací kapsle: plná koule, pak oranžový prstenec.
+    // Nahrávací kapsle: oranžový PRSTENEC dole, plná žlutá koule na něm.
+    // Koule se kreslí až na prstenci, takže prstenec obklopuje plný kotouč.
     const [nx, ny] = toPx(NODE.center[0] * CANVAS, NODE.center[1] * CANVAS);
     const nodeR = toLen((NODE.diameter * CANVAS) / 2);
-    blendCircle(pixels, sw, sh, nx, ny, nodeR, paint(NODE.fill), 1);
-    blendCircle(pixels, sw, sh, nx, ny, nodeR * NODE.ringScale, paint(NODE.ring), mono ? 1 : NODE.ringAlpha);
+    const nodeInnerR = nodeR * NODE.ringScale;
+    blendRing(pixels, sw, sh, nx, ny, nodeR, nodeInnerR, paint(NODE.ring), mono ? 1 : NODE.ringAlpha);
+    blendCircle(pixels, sw, sh, nx, ny, nodeInnerR, paint(NODE.fill), 1);
 
     // Jiskry: signál, který už putuje do stroje.
     for (const spark of SPARKS) {

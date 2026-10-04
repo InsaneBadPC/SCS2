@@ -28,8 +28,8 @@ const FOREGROUND_SCALE = 0.598338;
 /** Osa gradientu pásu: od začátku tahu (cyan) k jeho konci (oranž). */
 const AXIS = { x1: 719.87, y1: 239.62, x2: 304.13, y2: 698.37 };
 
-/** Koule na konci tahu — nahrávací kapsle. */
-const NODE = { cx: 304.13, cy: 698.37, r: 87.04, ringR: 74.85 };
+/** Koule na konci tahu — nahrávací kapsle: plná žlutá koule v oranžovém prstenci. */
+const NODE = { cx: 304.13, cy: 698.37, r: 89.09, ringR: 71.27 };
 
 /** Tři jiskry za koulí — signál, který už putuje do stroje. */
 const SPARKS = [
@@ -63,6 +63,9 @@ const RIM = { inset: 0.5, opacity: 0.14, width: 1 };
  * GENEROVÁNO z `scripts/brand/geometry.mjs` (1504 vrcholů, přesnost rozvinutí
  * ~0.004 px). Nepiš to ručně a nezkracuj — je to celý znak. Změna geometrie
  * znamená `node scripts/brand/write-svg.mjs` a pak sem vložit nový obsah.
+ *
+ * POZOR: prstenec je vodotěsný — žádná hrana nepřeskočuje kus geometrie,
+ * takže v rastru nevznikne vlasová praska. Kontroluje to `ribbonWatertight()`.
  */
 const RIBBON_D = `  M 742.91 239.62 L 742.91 237.66 L 742.87 235.72 L 742.8 233.79 L 742.69 231.86 L 742.55 229.95 L 742.37 228.04 L 742.15 226.14
   L 741.9 224.26 L 741.61 222.38 L 741.28 220.52 L 740.92 218.67 L 740.52 216.83 L 740.09 215 L 739.62 213.19 L 739.11 211.39
@@ -248,10 +251,10 @@ const RIBBON_D = `  M 742.91 239.62 L 742.91 237.66 L 742.87 235.72 L 742.8 233.
   L 690.8 218.81 L 691.24 219.55 L 691.68 220.29 L 692.09 221.04 L 692.49 221.8 L 692.87 222.56 L 693.24 223.34 L 693.59 224.13
   L 693.93 224.93 L 694.24 225.74 L 694.55 226.57 L 694.83 227.4 L 695.1 228.25 L 695.35 229.11 L 695.58 229.99 L 695.8 230.88
   L 695.99 231.79 L 696.17 232.71 L 696.33 233.64 L 696.47 234.6 L 696.59 235.57 L 696.68 236.55 L 696.76 237.56 L 696.81 238.58
-  L 696.83 239.62 L 742.8 241.87 L 742.47 244.11 L 741.92 246.3 L 741.16 248.43 L 740.19 250.48 L 739.03 252.42 L 737.68 254.23
-  L 736.16 255.91 L 734.49 257.43 L 732.67 258.77 L 730.73 259.94 L 728.69 260.9 L 726.56 261.66 L 724.37 262.21 L 722.13 262.55
-  L 719.87 262.66 L 717.61 262.55 L 715.38 262.21 L 713.18 261.66 L 711.05 260.9 L 709.01 259.94 L 707.07 258.77 L 705.26 257.43
-  L 703.58 255.91 L 702.06 254.23 L 700.71 252.42 L 699.55 250.48 L 698.59 248.43 L 697.82 246.3 L 697.27 244.11 L 696.94 241.87
+  L 696.83 239.62 L 696.94 241.87 L 697.27 244.11 L 697.82 246.3 L 698.59 248.43 L 699.55 250.48 L 700.71 252.42 L 702.06 254.23
+  L 703.58 255.91 L 705.26 257.43 L 707.07 258.77 L 709.01 259.94 L 711.05 260.9 L 713.18 261.66 L 715.38 262.21 L 717.61 262.55
+  L 719.87 262.66 L 722.13 262.55 L 724.37 262.21 L 726.56 261.66 L 728.69 260.9 L 730.73 259.94 L 732.67 258.77 L 734.49 257.43
+  L 736.16 255.91 L 737.68 254.23 L 739.03 252.42 L 740.19 250.48 L 741.16 248.43 L 741.92 246.3 L 742.47 244.11 L 742.8 241.87
   Z`;
 
 export interface BrandMarkProps {
@@ -309,7 +312,8 @@ export function BrandMark({ size = 48, variant = "badge" }: BrandMarkProps) {
 
         <LinearGradient id={ribbonId} gradientUnits="userSpaceOnUse" x1={AXIS.x1} y1={AXIS.y1} x2={AXIS.x2} y2={AXIS.y2}>
           <Stop offset="0" stopColor={COLORS.primary} />
-          <Stop offset="0.5" stopColor={COLORS.primaryVibrant} />
+          <Stop offset="0.38" stopColor={COLORS.primaryVibrant} />
+          <Stop offset="0.68" stopColor={COLORS.accentWarm} />
           <Stop offset="1" stopColor={COLORS.secondary} />
         </LinearGradient>
 
@@ -355,14 +359,15 @@ export function BrandMark({ size = 48, variant = "badge" }: BrandMarkProps) {
 
       <G scale={scale} originX={CANVAS / 2} originY={CANVAS / 2}>
         <Path d={RIBBON_D} fill={ink ?? `url(#${ribbonId})`} />
-        <Circle cx={NODE.cx} cy={NODE.cy} r={NODE.r} fill={ink ?? COLORS.accentWarm} />
+        {/* Prstenec dole, plná koule na něm — prstenec obklopuje plný kotouč. */}
         <Circle
           cx={NODE.cx}
           cy={NODE.cy}
-          r={NODE.ringR}
+          r={NODE.r}
           fill={ink ?? COLORS.secondary}
-          fillOpacity={monochrome ? 1 : 0.55}
+          fillOpacity={monochrome ? 1 : 0.85}
         />
+        <Circle cx={NODE.cx} cy={NODE.cy} r={NODE.ringR} fill={ink ?? COLORS.accentWarm} />
         {SPARKS.map((spark) => (
           <Circle
             key={`${spark.cx}-${spark.cy}`}

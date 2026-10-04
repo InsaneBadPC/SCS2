@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="scs2-only-title scs2-only-desc">
   <title id="scs2-only-title">SCS2 — znak SongCraft Studio</title>
-  <desc id="scs2-only-desc">Samotný znak bez štítku, průhledné pozadí. Kosý pás tvořený písmenem S, který se zároveň čte jako zvuková vlna: cyan na začátku, světlá modrá v pasu, oranž na konci. Spodní konec zakončuje plná žlutá koule v oranžovém prstenci — nahrávací kapsle mikrofonu — a za ní tři zmenšující se jiskry, signál, který už putuje do stroje.</desc>
+  <desc id="scs2-only-desc">Samotný znak bez štítku, průhledné pozadí. Kosý pás tvořený písmenem S, který se zároveň čte jako zvuková vlna: cyan na začátku, světlá modrá v pasu, žlutá před koncem, oranž na konci. Spodní konec zakončuje plná žlutá koule v oranžovém prstenci — nahrávací kapsle mikrofonu — a za ní tři zmenšující se jiskry, signál, který už putuje do stroje.</desc>
   <defs>
     <linearGradient id="scs2-ribbon" gradientUnits="userSpaceOnUse" x1="719.87" y1="239.62" x2="304.13" y2="698.37">
       <stop offset="0" stop-color="#00D9EC"/>
-      <stop offset="0.5" stop-color="#5FF3FF"/>
+      <stop offset="0.38" stop-color="#5FF3FF"/>
+      <stop offset="0.68" stop-color="#FFC53D"/>
       <stop offset="1" stop-color="#FF9500"/>
     </linearGradient>
   </defs>
@@ -195,13 +196,13 @@
       L 690.8 218.81 L 691.24 219.55 L 691.68 220.29 L 692.09 221.04 L 692.49 221.8 L 692.87 222.56 L 693.24 223.34 L 693.59 224.13
       L 693.93 224.93 L 694.24 225.74 L 694.55 226.57 L 694.83 227.4 L 695.1 228.25 L 695.35 229.11 L 695.58 229.99 L 695.8 230.88
       L 695.99 231.79 L 696.17 232.71 L 696.33 233.64 L 696.47 234.6 L 696.59 235.57 L 696.68 236.55 L 696.76 237.56 L 696.81 238.58
-      L 696.83 239.62 L 742.8 241.87 L 742.47 244.11 L 741.92 246.3 L 741.16 248.43 L 740.19 250.48 L 739.03 252.42 L 737.68 254.23
-      L 736.16 255.91 L 734.49 257.43 L 732.67 258.77 L 730.73 259.94 L 728.69 260.9 L 726.56 261.66 L 724.37 262.21 L 722.13 262.55
-      L 719.87 262.66 L 717.61 262.55 L 715.38 262.21 L 713.18 261.66 L 711.05 260.9 L 709.01 259.94 L 707.07 258.77 L 705.26 257.43
-      L 703.58 255.91 L 702.06 254.23 L 700.71 252.42 L 699.55 250.48 L 698.59 248.43 L 697.82 246.3 L 697.27 244.11 L 696.94 241.87
+      L 696.83 239.62 L 696.94 241.87 L 697.27 244.11 L 697.82 246.3 L 698.59 248.43 L 699.55 250.48 L 700.71 252.42 L 702.06 254.23
+      L 703.58 255.91 L 705.26 257.43 L 707.07 258.77 L 709.01 259.94 L 711.05 260.9 L 713.18 261.66 L 715.38 262.21 L 717.61 262.55
+      L 719.87 262.66 L 722.13 262.55 L 724.37 262.21 L 726.56 261.66 L 728.69 260.9 L 730.73 259.94 L 732.67 258.77 L 734.49 257.43
+      L 736.16 255.91 L 737.68 254.23 L 739.03 252.42 L 740.19 250.48 L 741.16 248.43 L 741.92 246.3 L 742.47 244.11 L 742.8 241.87
       Z" fill="url(#scs2-ribbon)"/>
-    <circle cx="304.13" cy="698.37" r="87.04" fill="#FFC53D"/>
-    <circle cx="304.13" cy="698.37" r="74.85" fill="#FF9500" fill-opacity="0.55"/>
+    <circle cx="304.13" cy="698.37" r="89.09" fill="#FF9500" fill-opacity="0.85"/>
+    <circle cx="304.13" cy="698.37" r="71.27" fill="#FFC53D"/>
     <circle cx="216.83" cy="793.6" r="28.16" fill="#5FF3FF" fill-opacity="1"/>
     <circle cx="166.14" cy="848.9" r="21.5" fill="#5FF3FF" fill-opacity="0.7"/>
     <circle cx="121.09" cy="898.05" r="15.36" fill="#5FF3FF" fill-opacity="0.45"/>

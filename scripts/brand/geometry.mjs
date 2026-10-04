@@ -44,13 +44,19 @@
  *   Kapsle       CAP_SEGMENTS — počet úseků půlkružnice na každém konci.
  *   Přesnost     SAMPLES (720) na rozvinutí osy. Chyba je ~kvadratická,
  *                  takže i 360 je bezpečných pro 1024 px.
- *   Koule        NODE.diameter / ringScale. ringScale < 1 = prstenec vychází
- *                  zpod koule jako halo.
+ *   Koule        NODE.diameter / .ringScale / .ringAlpha. ringScale je VNITŘNÍ
+ *                  poloměr prstence jako zlomek poloměru koule (0.8 = pás
+ *                  široký 10 % průměru); koule se kreslí na prstenci.
+ *   Gradient     GRADIENT_STOPS — čtyři zastávky kyle → světlá modrá →
+ *                  žlutá → oranžová. Žlutá zastávka je povinná: bez ní by
+ *                  lineární směs v RGB prošla zelenou.
  *   Jiskry       SPARK_SPEC.direction (kam letí), .offsets (jak daleko),
  *                  .diameters a .alphas (tri po sobe).
  *   Štítek       BADGE.radius = zaoblení rohu včetně celé plochy 0..1,
  *                  .glows = dvě světla. Bezpečná zóna pro adaptivní ikonu se
  *                  počítá automaticky z `safeScale()`.
+ *   Vodotěsnost  `ribbonWatertight()` — prstenec pásu nesmí mít průsečík
+ *                  vlastních hran, jinak v rastru vznikne vlasová praska.
  *   Škálování    `markTransform("badge")` pro kompozici ve štítku,
  *                  `markTransform("foreground")` pro adaptivní ikonu, kde
  *                  je bezpečná zóna Androidu (vnitřní kruh 66 %).
@@ -210,31 +216,47 @@ export function sampleSpine(samples = SAMPLES) {
  * `halfWidth()` v daném konci. Každý vrchol nese svoje `t`, aby rasterizator
  * uměl interpolovat gradient po ploše.
  *
- * Vrací: `{ points, count, d, capSegments, pathSegments }` v pixelech.
+ * VODOTĚSNOST
+ * ----------
+ * Obě strany se počítají ze STEJNÝCH indexů vzorků osy — pro každý index `i`
+ * existuje právě jeden vrchol kladné a jeden záporné strany, takže kaple na
+ * koncích napojují na body, které už v prstenci jsou, a žádný vrchol nemá dva
+ * různé souřadnicové zápisy. Oblouk kaple se navíc vypisuje ve směru, ve
+ * kterém prstenec prochází: od `+n` k `-n` na konci tahu a od `-n` k `+n` na
+ * jeho začátku. Obrácený směr by oblouk přeběhl přes celou půlkružnici a
+ * uzavřel ji dvěma tětivami dlouhými jako průměr — prstenec by se protínal a
+ * sudě-liché vyplňování by na řádku vynechalo proužek.
+ *
+ * `ribbonWatertight()` je trvalý pojistný test proti návratu té chyby.
+ *
+ * Vrací: `{ points, count, capSegments, pathSegments }` v pixelech.
  */
 export function ribbonPolygon(samples = SAMPLES) {
   const { points } = sampleSpine(samples);
-  const half = points.map((p) => halfWidth(p.t));
+  const last = points.length - 1;
 
   const px = (x) => Math.round(x * CANVAS * 100) / 100;
   const py = (y) => Math.round(y * CANVAS * 100) / 100;
 
-  const positive = points.map((p, i) => ({
-    x: px(p.x + p.nx * half[i]),
-    y: py(p.y + p.ny * half[i]),
-    t: p.t,
-  }));
-  const negative = points.map((p, i) => ({
-    x: px(p.x - p.nx * half[i]),
-    y: py(p.y - p.ny * half[i]),
-    t: p.t,
-  }));
+  // Kladná a záporná strana z JEDNÉHO průchodu vzorky osy.
+  const positive = [];
+  const negative = [];
+  for (let i = 0; i <= last; i += 1) {
+    const p = points[i];
+    const w = halfWidth(p.t);
+    positive.push({ x: px(p.x + p.nx * w), y: py(p.y + p.ny * w), t: p.t });
+    negative.push({ x: px(p.x - p.nx * w), y: py(p.y - p.ny * w), t: p.t });
+  }
 
-  /** Půlkružnice: od `normal` přes `outward` do `-normal`. */
-  const cap = (center, radius, n, outward, t) => {
+  /**
+   * Půlkružnice o poloměru `radius` kolem `center`, od `center + radius·n`
+   * přes `outward` do `center - radius·n`. `forward` = true vypisuje vrcholy
+   * od `+n` k `-n`, false obráceně — podle toho, kam prstenec právě došel.
+   */
+  const cap = (center, radius, n, outward, t, forward) => {
     const ring = [];
-    for (let k = 1; k < CAP_SEGMENTS; k += 1) {
-      const angle = (Math.PI * k) / CAP_SEGMENTS;
+    for (let s = 1; s < CAP_SEGMENTS; s += 1) {
+      const angle = (Math.PI * (forward ? s : CAP_SEGMENTS - s)) / CAP_SEGMENTS;
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
       ring.push({
@@ -246,35 +268,84 @@ export function ribbonPolygon(samples = SAMPLES) {
     return ring;
   };
 
-  const last = points.length - 1;
   const ring = [];
   // Vpřed po kladné straně.
   for (let i = 0; i <= last; i += 1) ring.push(positive[i]);
-  // Kapsle na konci t = 1.
-  ring.push(...cap(SPINE.end, halfWidth(1), [points[last].nx, points[last].ny], [points[last].tx, points[last].ty], 1));
+  // Kaple na konci t = 1: navazuje positive[last] -> negative[last].
+  ring.push(...cap(SPINE.end, halfWidth(1), [points[last].nx, points[last].ny], [points[last].tx, points[last].ty], 1, true));
   // Zpět po záporné straně.
   for (let i = last; i >= 0; i -= 1) ring.push(negative[i]);
-  // Kapsle na začátku t = 0.
-  ring.push(
-    ...cap(
-      SPINE.start,
-      halfWidth(0),
-      [points[0].nx, points[0].ny],
-      [-points[0].tx, -points[0].ty],
-      0,
-    ),
-  );
+  // Kaple na začátku t = 0: navazuje negative[0] -> positive[0].
+  ring.push(...cap(SPINE.start, halfWidth(0), [points[0].nx, points[0].ny], [-points[0].tx, -points[0].ty], 0, false));
 
-  // Zavření prstence: poslední vrchol nesmí duplikovat první.
-  const first = ring[0];
-  const tail = ring[ring.length - 1];
-  if (Math.abs(tail.x - first.x) < 0.02 && Math.abs(tail.y - first.y) < 0.02) ring.pop();
+  // Prstenec je uzavřený už konstrukcí (`Z` v SVG, `(i + 1) % n` v rastru):
+  // poslední vrchol oblouku začátku leží o CAP_SEGMENTS kroků od positive[0]
+  // na téže půlkružnici, takže zavírací hrana je krátká tetiva, ne průměr.
 
   return {
     points: ring,
     count: ring.length,
     capSegments: CAP_SEGMENTS,
     d: ribbonPath(ring),
+  };
+}
+
+/**
+ * Vodotěsnost prstence pásu: počet vlastních průsečíků hran a nejdelší hrana.
+ *
+ * Prstenec je všechen složený z hran dvou postranních chůzů (jejich délku
+ * určuje hustota `SAMPLES`) a dvou oblouků kaplí (délka `capChord`). Rozpočet
+ * proto není pevná konstanta, ale násobek typické hrany: hrana mnohokrát
+ * delší znamená, že některý vrchol přeskočil o kus geometrie — přesně to,
+ * co dělala chybná kaple, když se oblouk vypisoval obráceným směrem a
+ * prstenec se zavíral dvěma tětivami dlouhými jako průměr.
+ *
+ * `selfIntersections` je podmínka sama o sobě: jeden průsečík stačí, aby
+ * sudě-liché vyplňování na některém řádku zrušilo proužek.
+ */
+export function ribbonWatertight(points = ribbonPolygon().points) {
+  const n = points.length;
+  // halfWidth() je normalizované, `points` jsou v pixelech.
+  const capChord = 2 * halfWidth(1) * CANVAS * Math.sin(Math.PI / (2 * CAP_SEGMENTS));
+
+  const orient = (r, p, q) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+
+  const lengths = new Float64Array(n);
+  for (let i = 0; i < n; i += 1) {
+    lengths[i] = Math.hypot(points[(i + 1) % n].x - points[i].x, points[(i + 1) % n].y - points[i].y);
+  }
+  const sorted = Float64Array.from(lengths).sort();
+  const medianEdge = sorted[n >> 1];
+  const longestEdge = sorted[n - 1];
+  const budget = 4 * Math.max(medianEdge, capChord);
+
+  let selfIntersections = 0;
+  for (let i = 0; i < n; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    for (let j = i + 2; j < n; j += 1) {
+      if (i === 0 && j === n - 1) continue;
+      const c = points[j];
+      const d = points[(j + 1) % n];
+      const d1 = orient(d, c, [a.x, a.y]);
+      const d2 = orient(d, c, [b.x, b.y]);
+      const d3 = orient(b, a, [c.x, c.y]);
+      const d4 = orient(b, a, [d.x, d.y]);
+      if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
+        if ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)) selfIntersections += 1;
+      }
+    }
+  }
+
+  const round = (v) => Math.round(v * 100) / 100;
+  return {
+    vertices: n,
+    selfIntersections,
+    medianEdge: round(medianEdge),
+    longestEdge: round(longestEdge),
+    capChord: round(capChord),
+    budget: round(budget),
+    ok: selfIntersections === 0 && longestEdge <= budget,
   };
 }
 
@@ -301,10 +372,19 @@ export function ribbonPath(points) {
 
 /* --- Gradient ------------------------------------------------------------- */
 
-/** Zastávky gradientu podél osy. */
+/**
+ * Zastávky gradientu podél osy.
+ *
+ * Čtyři zastávky, ne tři: mezi světlou modrou a oranžovou leží ŽLUTÁ, jinak
+ * by lineární směs v RGB protínala zelenou (barva `#5FF3FF` -> `#FFC53D` má
+ * v polovině odstín `rgb(175,220,158)`, travnatě bledý odstín) a barva by
+ * mezi kylem a oranží zmodrála. Žlutá zastávka drží odstín na teplé ose
+ * žlutá -> oranžová, kde hue klesá monotonně.
+ */
 export const GRADIENT_STOPS = Object.freeze([
   Object.freeze({ t: 0, color: PRIMARY }),
-  Object.freeze({ t: 0.5, color: PRIMARY_VIBRANT }),
+  Object.freeze({ t: 0.38, color: PRIMARY_VIBRANT }),
+  Object.freeze({ t: 0.68, color: ACCENT_WARM }),
   Object.freeze({ t: 1, color: SECONDARY }),
 ]);
 
@@ -347,13 +427,22 @@ export function rgbToHex({ r, g, b }) {
 
 /* --- Koule na konci tahu (nahrávací kapsle) ------------------------------- */
 
+/**
+ * Nahrávací kapsle: PLNÁ žlutá koule a oranžový PRSTENEC kolem ní.
+ *
+ * `ringScale` je VNITŘNÍ poloměr prstence jako zlomek poloměru koule, ne
+ * poloha středu prstence: 0.8 tedy znamená, že prstenec začíná na 80 %
+ * poloměru a jeho pás má šířku 20 % R, tedy 10 % průměru koule. Koule se
+ * kreslí až na prstenci, takže prstenec obklopuje plný kotouč a ne holý
+ * kruh s obvodovou čarou.
+ */
 export const NODE = Object.freeze({
   center: Object.freeze([0.297, 0.682]),
-  diameter: 0.17,
+  diameter: 0.174,
   fill: ACCENT_WARM,
   ring: SECONDARY,
-  ringAlpha: 0.55,
-  ringScale: 0.86,
+  ringAlpha: 0.85,
+  ringScale: 0.8,
 });
 
 /** 1px vnitřní lem štítku - jen aby hrana ne byla mrtvá. */
@@ -606,9 +695,17 @@ export function verify() {
     flatteningBudgetPx: CANVAS / 1024,
     ribbonVertices: ribbon.count,
     ribbonPathBytes: Buffer.byteLength(ribbon.d, "utf8"),
+    ribbonWatertight: ribbonWatertight(ribbon.points),
     halfWidthStart: halfWidth(0),
     halfWidthMid: halfWidth(0.5),
     halfWidthEnd: halfWidth(1),
+    node: {
+      diameter: NODE.diameter,
+      radiusPx: (NODE.diameter * CANVAS) / 2,
+      ringInnerPx: (NODE.diameter * CANVAS * NODE.ringScale) / 2,
+      ringBandPx: ((NODE.diameter * CANVAS) / 2) * (1 - NODE.ringScale),
+      diameterPercent: Math.round(NODE.diameter * 1e4) / 100,
+    },
     bounds: box,
     maxRadius: Math.round(maxRadius() * 1e6) / 1e6,
     safeScale: Math.round(safeScale() * 1e6) / 1e6,

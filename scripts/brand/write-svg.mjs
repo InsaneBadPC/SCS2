@@ -29,6 +29,7 @@ import {
   SPARKS,
   markTransform,
   ribbonPolygon,
+  ribbonWatertight,
 } from "./geometry.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -46,16 +47,23 @@ const TITLE = "SCS2 — znak SongCraft Studio";
 const DESC_BADGE =
   "Zaoblený tmavý štítek se dvěma barevnými světly. Uprostřed kosý pás tvořený písmenem S, " +
   "který se zároveň čte jako zvuková vlna: začíná cyanově nahoře vpravo, v nejširším místě " +
-  "přechází přes světlou modrou a končí oranžově. Na jeho spodním konci sedí plná žlutá koule " +
-  "v oranžovém prstenci — nahrávací kapsle mikrofonu. Za ní odlétají tři zmenšující se jiskry, " +
-  "signál, který už putuje do stroje.";
+  "přechází přes světlou modrá a žlutou a končí oranžově. Na jeho spodním konci sedí plná žlutá " +
+  "koule v oranžovém prstenci — nahrávací kapsle mikrofonu. Za ní odlétají tři zmenšující se " +
+  "jiskry, signál, který už putuje do stroje.";
 const DESC_MARK =
   "Samotný znak bez štítku, průhledné pozadí. Kosý pás tvořený písmenem S, který se zároveň čte " +
-  "jako zvuková vlna: cyan na začátku, světlá modrá v pasu, oranž na konci. Spodní konec zakončuje " +
-  "plná žlutá koule v oranžovém prstenci — nahrávací kapsle mikrofonu — a za ní tři " +
-  "zmenšující se jiskry, signál, který už putuje do stroje.";
+  "jako zvuková vlna: cyan na začátku, světlá modrá v pasu, žlutá před koncem, oranž na konci. " +
+  "Spodní konec zakončuje plná žlutá koule v oranžovém prstenci — nahrávací kapsle mikrofonu — " +
+  "a za ní tři zmenšující se jiskry, signál, který už putuje do stroje.";
 
-/** Všechny kruhy, co něco kreslíme: koule a jiskry v pixelech. */
+/**
+ * Všechny kruhy, co něco kreslíme: koule a jiskry v pixelech.
+ *
+ * Koule je dvojice soustředných kruhů v pořadí prstenec → kotouč: oranžový
+ * kruh o poloměru celé koule a nad ním plná žlutá koule o poloměru
+ * `ringScale × R`. Vznikne tím prstenec kolem PLNÉHO kotouče, ne obvodová
+ * čára na dutém kruhu.
+ */
 function circles() {
   const nodeX = num(NODE.center[0] * CANVAS);
   const nodeY = num(NODE.center[1] * CANVAS);
@@ -63,8 +71,8 @@ function circles() {
   const ringR = num(nodeR * NODE.ringScale);
 
   const node =
-    `    <circle cx="${nodeX}" cy="${nodeY}" r="${nodeR}" fill="${NODE.fill}"/>\n` +
-    `    <circle cx="${nodeX}" cy="${nodeY}" r="${ringR}" fill="${NODE.ring}" fill-opacity="${NODE.ringAlpha}"/>`;
+    `    <circle cx="${nodeX}" cy="${nodeY}" r="${nodeR}" fill="${NODE.ring}" fill-opacity="${NODE.ringAlpha}"/>\n` +
+    `    <circle cx="${nodeX}" cy="${nodeY}" r="${ringR}" fill="${NODE.fill}"/>`;
 
   const sparks = SPARKS.map((s) => {
     const cx = num(s.center[0] * CANVAS);
@@ -361,7 +369,24 @@ async function main() {
 
   const ribbon = ribbonPolygon();
   console.log(`pás: ${ribbon.count} vrcholů, d = ${Buffer.byteLength(ribbon.d, "utf8")} B`);
+
+  const seal = ribbonWatertight(ribbon.points);
+  console.log(
+    `vodotěsnost pásu: ${seal.ok ? "OK  " : "FAIL"} ${seal.selfIntersections} průsečíků, ` +
+      `nejdelší hrana ${seal.longestEdge} px (typická ${seal.medianEdge} px, rozpočet ${seal.budget} px)`,
+  );
+  if (!seal.ok) failed = true;
+
+  const nodeR = (NODE.diameter * CANVAS) / 2;
+  const band = nodeR * (1 - NODE.ringScale);
+  console.log(
+    `koule: průměr ${(NODE.diameter * 100).toFixed(1)} % plátna (${num(nodeR * 2)} px), ` +
+      `prstenec ${num(band)} px = ${num((band / (nodeR * 2)) * 100)} % průměru, ` +
+      `${NODE.ring} @ ${NODE.ringAlpha} kolem ${NODE.fill}`,
+  );
+
   console.log(`barvy: ${JSON.stringify(PALETTE)}`);
+  console.log(`gradient: ${GRADIENT_STOPS.map((s) => `${s.t}:${s.color}`).join(" → ")}`);
   if (failed) process.exitCode = 1;
 }
 
