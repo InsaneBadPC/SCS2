@@ -57,7 +57,10 @@ jobs:
     timeout-minutes: 45
     env:
       # Podpisový klíč žije jen v GitHub Secrets; hodnoty se nikdy nelogují.
-      CI_KEYSTORE_B64: ${{ secrets.CI_KEYSTORE }}
+      # Secret má historicky název `CI_KEYSTORE`, proměnná `CI_KEYSTORE_B64`;
+      # `||` bere oba, aby přejmenování v UI GitHubu nezabilo release build.
+      # Skript navíc fail-closed, pokud jsou nastavené obě a liší se.
+      CI_KEYSTORE_B64: ${{ secrets.CI_KEYSTORE_B64 || secrets.CI_KEYSTORE }}
       CI_KEYSTORE_PASS: ${{ secrets.CI_KEYSTORE_PASS }}
       CI_KEY_ALIAS: ${{ secrets.CI_KEY_ALIAS }}
       # Commit, který prošel CI — zároveň zdroj pro release notes a pro tag.

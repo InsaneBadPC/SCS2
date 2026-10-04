@@ -6,13 +6,20 @@
 // idempotentně. Zároveň se tím dá otestovat lokálně bez Gradle.
 //
 // Proměnné prostředí (žádné hodnoty se nelogují):
-//   CI_KEYSTORE_B64  base64 obsah .jks
+//   CI_KEYSTORE_B64  base64 obsah .jks / .p12  (primární název)
+//   CI_KEYSTORE      totéž pod názvem GitHub Secretu `CI_KEYSTORE`
 //   CI_KEYSTORE_PASS  heslo keystore i klíče
 //   CI_KEY_ALIAS     alias (výchozí songcraft)
 //
+// Precedence je deterministická a záměrně zdvojená, protože název Secretu
+// (`CI_KEYSTORE`) a název proměnné (`CI_KEYSTORE_B64`) se v minulosti rozcházily
+// a release build přitom tiše umíral na prázdné proměnné. Když jsou nastavené
+// OBE, musí se po normalizaci shodovat — jinak `fail` (fail closed), protože
+// „vyberu náhodnou" je přesně ten stav, který by vydal nepodepsané APK.
+//
 // Použití: node scripts/configure-android-signing.mjs [--check]
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -21,7 +28,22 @@ const KEYSTORE = path.join(ROOT, 'android', 'app', 'songcraft-release.jks');
 const PROPERTIES = path.join(ROOT, 'android', 'keystore.properties');
 const CHECK_ONLY = process.argv.includes('--check');
 
-const keystoreB64 = (process.env.CI_KEYSTORE_B64 ?? '').trim();
+// Secret v repu se jmenuje `CI_KEYSTORE`, proměnná v kódu `CI_KEYSTORE_B64`.
+// Bereme obě jména, jinak by stačilo jedno překlepnutí v UI GitHubu a release
+// build by skončil na `chybí …` bez jediného podepsaného APK.
+function resolveKeystoreEnv() {
+  const primary = (process.env.CI_KEYSTORE_B64 ?? '').trim();
+  const legacy = (process.env.CI_KEYSTORE ?? '').trim();
+  // Whitespace uvnitř base64 ignorujeme — `base64 -w 0` v shellu občas zaláme
+  // řádky a ekvivalentní hodnota nesmí vyvolat „nejednoznačné" chybovou hlášku.
+  const normalize = (value) => value.replace(/\s+/g, '');
+  if (primary && legacy && normalize(primary) !== normalize(legacy)) {
+    fail('CI_KEYSTORE_B64 a CI_KEYSTORE jsou nastavené na různé hodnoty — odstraň tu nesprávnou proměnnou');
+  }
+  return normalize(primary || legacy);
+}
+
+const keystoreB64 = resolveKeystoreEnv();
 const storePassword = (process.env.CI_KEYSTORE_PASS ?? '').trim();
 const keyAlias = (process.env.CI_KEY_ALIAS ?? 'songcraft').trim() || 'songcraft';
 
@@ -119,26 +141,87 @@ if (CHECK_ONLY) {
 }
 
 if (!keystoreB64 || !storePassword) {
-  fail('chybí CI_KEYSTORE_B64 nebo CI_KEYSTORE_PASS (release APK by nebyl podepsaný)');
+  fail('chybí CI_KEYSTORE_B64 (= CI_KEYSTORE) nebo CI_KEYSTORE_PASS (release APK by nebyl podepsaný)');
 }
 
-const keystore = Buffer.from(keystoreB64.replace(/\s+/g, ''), 'base64');
-// JKS začíná magickou FEEDFEED (0xFE), PKCS#12 je DER SEQUENCE (0x30).
-if (keystore.length < 512 || (keystore[0] !== 0xfe && keystore[0] !== 0x30)) {
-  fail('CI_KEYSTORE_B64 nevypadá jako platný JKS/PKCS12 keystore');
+// `keystore.properties` je prostý text `klíč=hodnota` na řádek — zalomení řádku
+// v hesle nebo aliasu by tam propašovalo falešnou vlastnost (např. `storeFile=`),
+// takže to odmítáme dřív, než se soubor zapíše.
+if (/[\r\n]/.test(storePassword) || /[\r\n]/.test(keyAlias)) {
+  fail('CI_KEYSTORE_PASS a CI_KEY_ALIAS nesmí obsahovat zalomení řádku');
 }
-writeFileSync(KEYSTORE, keystore, { mode: 0o600 });
-writeFileSync(
-  PROPERTIES,
-  [
-    'storeFile=songcraft-release.jks',
-    `storePassword=${storePassword}`,
-    `keyAlias=${keyAlias}`,
-    `keyPassword=${storePassword}`,
-    '',
-  ].join('\n'),
-  { mode: 0o600 },
-);
+
+const keystore = Buffer.from(keystoreB64, 'base64');
+// JKS: 4B magicka FEEDFEED, 4B verze, 4B pocet zaznamu.
+// PKCS#12: DER SEQUENCE (0x30) + délka vnějšího obalu, takže useknutí je
+// zjistitelné přesně. 512 B je pod stropem i nejmenšího realneho keystoreu
+// (keytool PKCS12 s jedním RSA-2048 klíčem má ~3 kB), takže hlídá jen blbosti.
+const JKS_MAGIC = 0xfeedfeed;
+const JKS_HEADER_BYTES = 12;
+const JKS_MIN_ENTRY_BYTES = 14; // tag + alias(2B) + timestamp(8B), minimum per entry
+const MIN_KEYSTORE_BYTES = 512;
+
+function derOuterLength(bytes) {
+  if (bytes[0] !== 0x30 || bytes.length < 3) return null;
+  const first = bytes[1];
+  if ((first & 0x80) === 0) return 3 + ((first << 8) | bytes[2]); // krátký tvar
+  const count = first & 0x7f; // dlouhý tvar: 0x80|počet oktetů
+  if (count === 0 || count > 4 || bytes.length < 2 + count) return null;
+  let declared = 0;
+  for (let index = 0; index < count; index += 1) declared = declared * 256 + bytes[2 + index];
+  return 2 + count + declared;
+}
+
+function validateKeystore(bytes) {
+  if (bytes.length < MIN_KEYSTORE_BYTES) {
+    fail(`keystore má jen ${bytes.length} B, méně než ${MIN_KEYSTORE_BYTES} B — base64 se nejspíš rozpadla`);
+  }
+  if (bytes.readUInt32BE(0) === JKS_MAGIC) {
+    const entries = bytes.readUInt32BE(8);
+    if (entries < 1) fail('JKS hlasí 0 záznamů — to není podepisovací klíč');
+    if (bytes.length < JKS_HEADER_BYTES + entries * JKS_MIN_ENTRY_BYTES) {
+      fail(`JKS hlasí ${entries} záznamů, ale soubor má jen ${bytes.length} B — keystore je useknutý`);
+    }
+    return;
+  }
+  if (bytes[0] === 0x30) {
+    const declared = derOuterLength(bytes);
+    if (declared !== null && declared > bytes.length) {
+      fail(`PKCS#12 hlasí ${declared} B, ale má jen ${bytes.length} B — keystore je useknutý`);
+    }
+    return;
+  }
+  fail(`keystore nezačíná magickou JKS (0xFEEDFEED) ani PKCS#12 (0x30), ale 0x${bytes[0].toString(16).padStart(2, '0').toUpperCase()}`);
+}
+
+validateKeystore(keystore);
+
+// Když selže zápis properties po zápisu keystore, nesmí zůstat viset
+// polovina hesla na disku — Gradle by si ji vzal i bez platných properties.
+try {
+  writeFileSync(KEYSTORE, keystore, { mode: 0o600 });
+  writeFileSync(
+    PROPERTIES,
+    [
+      'storeFile=songcraft-release.jks',
+      `storePassword=${storePassword}`,
+      `keyAlias=${keyAlias}`,
+      `keyPassword=${storePassword}`,
+      '',
+    ].join('\n'),
+    { mode: 0o600 },
+  );
+} catch (error) {
+  try {
+    rmSync(KEYSTORE, { force: true });
+    rmSync(PROPERTIES, { force: true });
+  } catch {
+    // už nic dalšího neuděláme, hláška níže je ta důležitá
+  }
+  fail(`nepodařilo se zapsat keystore na disk: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 if (patched !== original) writeFileSync(GRADLE, patched, 'utf8');
-console.log(`signing: release klíč (alias ${keyAlias}) zapojen, keystore ${keystore.length} B`);
+// Alias ani heslo se nelogují — do logu jde jen délka, podle níž se pozná, že
+// base64 prošla v pořádku.
+console.log(`signing: release klíč zapojen, keystore ${keystore.length} B`);
