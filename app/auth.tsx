@@ -20,6 +20,9 @@ import { OnPrimary, Radius, Space, TouchTarget, Type } from "@/lib/design-tokens
 /** Resetovací odkaz musí jít do scheme z app.config.ts (env.scheme). */
 const RESET_REDIRECT = RESET_LINK_URI;
 
+/** GoTrue chyba pri vycerpanem limitu posilani mailu (rate_limit_email_sent). */
+const RATE_LIMIT_CODE = "over_email_send_rate_limit";
+
 export default function AuthScreen() {
   const colors = useColors();
   const [selected, setSelected] = useState<StudioAccount>(STUDIO_ACCOUNTS[0]);
@@ -57,15 +60,30 @@ export default function AuthScreen() {
     setSendingReset(false);
 
     if (error) {
+      // GoTrue ma na posilani resetovacich mailu limit 2 e-maily za hodinu pro
+      // cely projekt, takze po sobe dva lide dostanou 429 a treti uz ne.
+      // `error.code` je jedina cast chyby, kterou smi zobrazit - zbytek je anglicky.
+      if (error.code === RATE_LIMIT_CODE) {
+        Alert.alert(
+          "Příliš mnoho pokusů",
+          "Odkaz se posílá jen párkrát za hodinu, a právě jsi vyčerpal limit. " +
+            "Zkontroluj e-mail za hodinu a zkus to potom znovu.",
+        );
+        return;
+      }
       Alert.alert("Odkaz se nepodařilo poslat", "Zkuste to za chvíli znovu.");
       return;
     }
 
+    // 200 z GoTrue znamena jen "pozadavak prijat", ne "mail dorazil". Doly se
+    // nesmime chovat, jako bychom potvrdili doruceni - rikat "poslali jsme
+    // ti e-mail" by bezpravdivy v okamziku, kdy se o doruceni nevim.
     Alert.alert(
-      "Resetovací odkaz odeslán",
-      "Odkaz pro nastavení nového hesla jsme poslali na adresu " + selected.email + ". " +
-        "Musí to být adresa vybraného účtu — jinak se reset nevztahuje na tebe. " +
-        "Odkaz otevři na tomhle zařízení, jinak se nedá použít.",
+      "Zkontroluj e-mail",
+      "Požadavek pro nastavení nového hesla byl odeslán na adresu " + selected.email +
+        ". E-mail dorazí jen tehdy, když je ta adresa registrovaná k účtu " + selected.name +
+        ". Zkontroluj spam, odkaz otevři na tomhle zařízení. " +
+        "Pokud nic nepřijde, kontaktuj správce.",
     );
   };
 
