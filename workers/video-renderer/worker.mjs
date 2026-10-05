@@ -26,7 +26,7 @@
  * Optional: DASHBOARD_URL (default http://127.0.0.1:8080), WORKER_INTERVAL_MS (30000),
  *           WORK_DIR, RUN_ONCE=1.
  */
-import { mkdir, writeFile, readFile, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, writeFile, readFile, readdir, rm, stat, statfs } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -43,6 +43,8 @@ const workRoot = process.env.WORK_DIR || "/tmp";
 const interval = Number(process.env.WORKER_INTERVAL_MS || 30000);
 const maxUploadBytes = Number(process.env.MAX_UPLOAD_BYTES || 45 * 1024 * 1024);
 const maxDownloadBytes = Number(process.env.MAX_DOWNLOAD_BYTES || 64 * 1024 * 1024);
+const minFreeBytes = Number(process.env.MIN_FREE_BYTES || 2 * 1024 * 1024 * 1024);
+const preflightOnly = process.env.PREFLIGHT_ONLY === "1";
 if (!url || !key) throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
 
 const headers = { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
@@ -72,6 +74,118 @@ async function download(file, target, extraHeaders = {}) {
   const bytes = Buffer.from(await response.arrayBuffer());
   if (bytes.byteLength <= 0 || bytes.byteLength > maxDownloadBytes) throw new Error("Downloaded file has an invalid size");
   await writeFile(target, bytes);
+}
+
+/**
+ * Wrapper s časovým limitem. Preflight nesmí viset: na neobvyklém filesystému
+ * (např. mkdir -p do /proc) může systémový syscall blokovat neomezeně a kontrola
+ * závislostí by pak měla stejný defect jako samotný render.
+ */
+function withTimeout(promise, ms, label) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} vypršel po ${ms} ms`)), ms); }),
+  ]);
+}
+
+/**
+ * Startup preflight: ověří všechny věci, bez kterých worker nemůže renderovat,
+ * a při chybějící závislosti odejde s nenulovým kódem místo toho, aby selhal potom
+ * uprostřed dvouhodinového renderu. Dřív to končilo až na `spawn ffmpeg ENOENT`
+ * u jednoho jobu, který pak zůstal viset ve stavu rendering.
+ */
+async function preflight() {
+  const problems = [];
+
+  for (const bin of ["ffmpeg", "ffprobe"]) {
+    try {
+      await exec(bin, ["-version"], { maxBuffer: 1024 * 1024 });
+    } catch (error) {
+      problems.push(`${bin} není v PATH nebo není spustitelný (${error.code || error.message})`);
+    }
+  }
+  if (problems.length === 0) {
+    // Bez libx264 a aac by ffmpeg vyrobil jen prázdný/nečitelný MP4; kontrola
+    // encoderu je levná a odliší "ffmpeg existuje" od "ffmpeg umí MP4".
+    try {
+      const { stdout } = await exec("ffmpeg", ["-hide_banner", "-encoders"], { maxBuffer: 4 * 1024 * 1024 });
+      for (const encoder of ["libx264", "aac"]) {
+        if (!new RegExp(`\\s${encoder}\\s`, "i").test(stdout)) {
+          problems.push(`ffmpeg je nainstalovaný, ale nemá encoder ${encoder}`);
+        }
+      }
+    } catch (error) {
+      problems.push(`ffmpeg -encoders selhal (${error.code || error.message})`);
+    }
+  }
+
+  // mkdir i statfs se obalí limitem, aby kontrola sama nevěsela (viz withTimeout).
+  const workDirOk = await withTimeout(
+    (async () => {
+      await mkdir(workRoot, { recursive: true });
+      const probe = path.join(workRoot, `.preflight-${process.pid}`);
+      await writeFile(probe, "ok");
+      await rm(probe, { force: true });
+      const space = await statfs(workRoot);
+      return Number(space.bavail) * Number(space.bsize);
+    })(),
+    Number(process.env.PREFLIGHT_TIMEOUT_MS || 15_000),
+    `kontrola WORK_DIR ${workRoot}`
+  ).then(
+    (free) => ({ free }),
+    (error) => ({ error })
+  );
+
+  if (workDirOk.error) {
+    problems.push(
+      `WORK_DIR ${workRoot} není použitelný (${workDirOk.error.code || workDirOk.error.message}). Nastav WORK_DIR na zapisovatelný adresář.`
+    );
+  } else if (workDirOk.free < minFreeBytes) {
+    problems.push(
+      `na ${workRoot} je ${(workDirOk.free / 1024 ** 3).toFixed(2)} GiB volných, minimum je ${(minFreeBytes / 1024 ** 3).toFixed(2)} GiB (MIN_FREE_BYTES)`
+    );
+  } else {
+    console.log(`[preflight] volné místo na ${workRoot}: ${(workDirOk.free / 1024 ** 3).toFixed(1)} GiB`);
+  }
+
+  if (problems.length > 0) {
+    console.error("[preflight] video renderer nelze spustit, chybí závislosti:");
+    for (const problem of problems) console.error(`  - ${problem}`);
+    process.exit(1);
+  }
+  console.log("[preflight] ffmpeg, ffprobe, encodery, WORK_DIR a volné místo jsou v pořádku");
+}
+
+/**
+ * Větve `image_animation` a `full_scenes` jedou přes ai-video-generator dashboard.
+ * Dashboard na headless VM nebeží a `fetch` na mrtvý port hází ECONNREFUSED až
+ * v okamžiku generování, takže job vypadal jako chyba sítě. Proto se dostupnost
+ * ověří PŘED stahováním audia: bez dashboardu se job odmítne hned, bez stažení
+ * stovek MB a bez čekání na retry.
+ */
+async function assertDashboardReady() {
+  if (!dashboardUser || !dashboardPassword) {
+    throw new Error(
+      "Větev vyžaduje ai-video-generator dashboard, ale DASHBOARD_USER/DASHBOARD_PASSWORD nejsou nastavené. Použij source_loop nebo static_cover, obě jsou čistý ffmpeg. / This branch needs the ffmpeg-web dashboard, which is not configured."
+    );
+  }
+  let response;
+  try {
+    response = await fetch(`${dashboardUrl}/api/runs`, {
+      headers: { Authorization: dashAuth() },
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (error) {
+    throw new Error(
+      `Dashboard na ${dashboardUrl} neodpovídá (${error.cause?.code || error.code || error.message}). Větev není na tomto stroji dostupná, použij source_loop nebo static_cover. / Dashboard unreachable; use a pure ffmpeg branch.`
+    );
+  }
+  if (!response.ok) {
+    throw new Error(
+      `Dashboard na ${dashboardUrl} vrátil ${response.status}: ${(await response.text()).slice(0, 200)}. Použij source_loop nebo static_cover.`
+    );
+  }
 }
 
 /** Supabase upload limit je 50 MiB; před uploadem bezpečně zmenší př oversized MP4. */
@@ -320,6 +434,10 @@ async function processJob(job) {
     const audio = path.join(work, "audio.mp3");
     const output = path.join(work, "render.mp4");
     const type = job.mode || job.type || "static_cover";
+    // Dashboard se ověřuje PŘED stahováním zdrojů. Bez této kontroly se na mrtvém
+    // portu 8080 nejprve stáhne celé audio a obal, teprve pak to spadne na
+    // ECONNREFUSED a job vypadá jako chyba sítě místo chybějící závislosti.
+    if (type === "image_animation" || type === "full_scenes") await assertDashboardReady();
     // source_loop si bere video, nebo obal když video není, a obal nepotřebuje
     // stahovat dopředu.
     const needsArtwork = type !== "source_loop";
@@ -380,6 +498,7 @@ async function processJob(job) {
       await assertPlayableVideo(output);
     } else if (type === "image_animation" || type === "full_scenes") {
       // === větve B/C: dashboard pipeline (Oracle localhost, Wan 2.2 I2V / scény) ===
+      // Dostupnost dashboardu už ověřil assertDashboardReady() před stahováním.
       const mode = type === "image_animation" ? "image_animation" : "full_scenes";
       const record = await dashGenerate(mode, audio, artwork, song.title, job.prompt_used || "");
       await dashPoll(record.run_id);
@@ -450,7 +569,9 @@ async function tick() {
   if (ok) await processJob({ ...job, attempt_count: attempt, max_attempts: maxAttempts, mode: claimed[0].mode || job.mode, backend: claimed[0].backend || job.backend, prompt_used: claimed[0].prompt_used || job.prompt_used });
 }
 
-console.log(`Temney renderer ready; interval ${interval}ms; dashboard ${dashboardUrl}`);
+await preflight();
+if (preflightOnly) process.exit(0);
+console.log(`Temney renderer ready; interval ${interval}ms; dashboard ${dashboardUrl} (pouze pro image_animation/full_scenes)`);
 do {
   await tick().catch((error) => console.error(error));
   if (process.env.RUN_ONCE === "1") break;
