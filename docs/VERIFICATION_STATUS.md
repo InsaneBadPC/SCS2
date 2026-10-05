@@ -1,105 +1,165 @@
-# Ověření implementace — 25. 9. 2026 (večer, po nasazení)
+# Ověření stavu SCS2 — 5. 10. 2026
 
-Tento záznam obsahuje výsledky hermetic kontrol, živých E2E testů a stav rollbacku. Neobsahuje credentials ani hodnoty secretů.
+Ověřeno přímo proti **SCS2** projektu a proti souborům v repu. Bez credentials
+a bez hodnot secretů.
 
-## Nasazení na produkci (projekt `hfykngbhcxmnpxvjagoj`)
+> **Pozor na původ tohoto souboru.** Do 5. 10. 2026 neslo tentýž název v SCS1
+> a psalo o projektu `hfykngbhcxmnpxvjagoj`. Ty výsledky se do SCS2 **nepřevedly** —
+> je to jiný Supabase projekt, jiné účty a jiný Google klíč. Sekce označené
+> níže jako *SCS1 – jen historie* nepopisují SCS2 a nikdo je neměl brát jako
+> současný stav.
 
-- 11 produkčních migrací aplikováno v pořadí a zapsáno do `supabase_migrations.schema_migrations` (potvrzeno v CI logu: `applying … ok` ×11)
-- 23 Edge Function secretů na projektu; všech 15 povinných názvů ověřeno přes Management API (`scripts/verify-edge-secrets.mjs`)
-- 16 Edge Functions nasazeno (`supabase functions deploy --use-api`)
-- Deploy workflow: `Deploy agent orchestrator` — **success** (opakovaně, idempotentní)
-- `SongCraft CI` — **success** (16/16 `deno check`, testy, security scan, web export)
+## Projekt
 
-## Živé E2E (15/15)
+| Položka | Hodnota | Jak ověřeno |
+|---|---|---|
+| Supabase projekt | **SCS2**, ref `gpgbgjxeybfncrexrpbr` | Management API `GET /projects/{ref}` |
+| Region | **`eu-west-2`** (Londýn) | Management API + `.env.local` `SUPABASE_REGION` |
+| GitHub | `InsaneBadPC/SCS2`, public, `main` | `GET /repos/InsaneBadPC/SCS2` |
 
-- auth pro všechny tři účty (`temney`, `dj-palacinka`, `verca`)
-- `agent_confirmations`, `youtube_oauth_states` existují; `agent_videos` má `attempt_count`/`lease_expires_at`
-- `agent-orchestrator`: anonymně 401, přihlášeně 200, žádný stack trace v odpovědi
-- `youtube-sync-stats` a `youtube-publish-scheduler`: anonymně 401 (fail-closed)
-- `youtube-oauth-start` vrací platnou Google authorization URL (PKCE stav uložen)
-- izolace účtů: žádný překryv songů mezi účty, cizí song nepřístupný
-- 24 songů / 20 audio verzí / 10 jobů ve frontě dostupných pro render testy
+## Migrace
 
-## Video pipeline (skutečné rendery, vše tři režimy)
+- **19** souborů v `supabase/migrations/`
+- **18 aplikovaných** (Management API `GET /database/migrations`)
+- **1 NEaplikovaná:** `20261004000000_agent_ops_rls_policies.sql`
 
-- `static_cover` × 6, `image_animation` × 1, `full_scenes` × 1 — vše `ready`
-- postup: job vytvořen přes `songcraft-youtube` jako přihlášený uživatel → nový worker si ho zamkl lease → `queued → rendering → ready`
-- výstupy: 10–18 MB MP4, platné `ftyp`, 16:9, v soukromém bucketu `songcraft` s owner-prefix cestou
-- anonymní čtení objektu: HTTP 400 (soukromé); vlastník přes signed URL: HTTP 200
-- opravené chyby zjištěné živým během: chybějící čárka před `format=yuv420p` v filter chainu a detekce typu artworku z magic bytů
-- legacy `songcraft-video-renderer` (GitHub release pipeline) zastaven a vypnut; aktivní je už jen `songcraft-renderer`
+Starší údaj „11 produkčních migrací“ patřil SCS1 a je zastaralý. Pozor:
+`scripts/production-smoke-check.mjs` kontroluje jen **11 vyjmenovaných
+povinných** souborů, ne celý počet — to není rozpor.
 
-## Android APK a automatické aktualizace
+## Edge Functions
 
-- `.github/workflows/build-apk.yml` po každém pushi do klientského kódu vystaví APK, zveřejní ho jako release `app-vX.Y.Z` a doplní verzi, versionCode, velikost, sha256 a commit
-- verze se propíše i do `package.json` před `expo prebuild`, takže tag release, Android `versionName` a `Constants.expoConfig.version` (Nastavení) sedí — jinak by si updater nabízel verzi, kterou už aplikace má
-- `versionCode` se počítá jako maximum posledního vydání + 1 (Android nižší verci nepřijme)
-- podepisování: `scripts/configure-android-signing.mjs` po prebuildu vloží `release` do existujícího `signingConfigs` bloku a přepojí `release` buildType z debug klíče runnera (debug klíč se mezi buildy mění → aktualizace nebyly proveditelné)
-- klíč pouze v GitHub Secrets (`CI_KEYSTORE_PASS`, `CI_KEY_ALIAS`) a base64 klíče v `CI_KEYSTORE` **nebo** `CI_KEYSTORE_B64` — workflow čte `secrets.CI_KEYSTORE_B64 || secrets.CI_KEYSTORE`, takže jsou správná oba názvy, ale **nikdy oba současně s různými hodnotami** (skript pak fail-closed spadne). Alias je `CI_KEY_ALIAS`, ne `CI_KEYSTORE_ALIAS`.
-- ~~ověřeno: `app-v2.9.3` (versionCode 20903, 49 MB) podepsán certifikátem `CN=SongCraft Studio, OU=Release` se SHA-256 `97:95:BA:…:9D` (shoduje s lokálním keystore)~~ — **tvrzení neplatí, opraveno 5. 10. 2026 níže**
-- updater v aplikaci: banner při startu (s přeskočením verze) + ruční kontrola v Nastavení, throttle 30 min s cache (GitHub API bez tokenu má 60 req/h na IP)
-- **jednorázový krok pro uživatele:** staré APK je podepsané jiným klíčem, takže je nutné starou aplikaci odinstalovat a 2.9.3 nainstalovat ručně; další aktualizace už jdou přes aplikaci
+- **18** funkcí v repu (`ls -1 supabase/functions/*/index.ts | wc -l`; `_shared/`
+  funkce není) a **18 nasazených** — seznamy sedí 1:1.
+- `youtube-oauth-callback`, `youtube-sync-stats` a `youtube-publish-scheduler`
+  mají v `supabase/config.toml` `verify_jwt = false` (cron/JWT-free).
+- CORS hlásiče (`Access-Control-Allow-Origin: *`) má **17 z 18**. Jediný bez je
+  `legal`, a to je záměrné — jde o veřejnou stránku pro Googlebot, která se
+  nesmí dotáhnout na `Authorization` hlavičku.
 
-### Oprava 5. 10. 2026 — podepisování nikdy nebylo ověřeno, `app-v3.0.8` je debug klíč
+## Secrets
 
-Rozhodující oprava předchozího odstavce. Závěr „ověřeno … shoduje s lokálním
-keystore" byl **nepravdivý** a právě on držel celý updater v nejistotě:
+- **11** uživatelských secretů nastavených (z 15 celkem; 4 z nich
+  `SUPABASE_DB_URL`/`JWKS`/`PUBLISHABLE_KEYS`/`SECRET_KEYS` zřizuje Supabase sám).
+- Chybí: **`YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, `YOUTUBE_REDIRECT_URI`**,
+  `SYNC_STATS_CRON_SECRET`, `PUBLISH_SCHEDULER_SECRET`.
+- Nalisteno (těch 11): `GEMINI_API_KEY`, `GOOGLE_AI_STUDIO_KEY`,
+  `SONGCRAFT_ALLOWED_EMAILS`, `SONGCRAFT_ALLOWED_USER_IDS`,
+  `SONGCRAFT_APP_REDIRECT_URL`, `SONGCRAFT_SERVICE_ROLE_KEY`,
+  `SONGCRAFT_SUPABASE_ANON_KEY`, `SONGCRAFT_SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+  `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL`.
+- Dvě další jména (`OPENROUTER_API_KEY`, `DEEPSEEK_API_KEY`) se čtou dynamicky
+  přes `keyEnvs` v `agent-orchestrator`, takže je grep `Deno.env.get("…")` najde
+  vůbec. Bez nich skončí fallback řetězec na `openrouter:no-key`.
+- Starý údaj „23 secretů / 15 povinných názvů“ patřil SCS1. `REQUIRED` v dnešním
+  `scripts/verify-edge-secrets.mjs` je **8 jmen** v profilu `base`, další jsou
+  profilové (`youtube`, `ai`, `cron`).
 
-- release `app-v2.9.3` **neexistuje** — repo má jediné release, `app-v3.0.8`, a **nul git tagů**
-- **žádný keystore nikde nebyl**: prázdný průchod celým filesystémem na `*.jks` / `*.keystore` /
-  `*.p12` / `*.pfx` vrátil 0 hitů, `~/.android/` je prázdná (chybí i `debug.keystore`),
-  v git historii žádný `.jks` nikdy nebyl přidán, `SCS2-secrets/` obsahoval jen `Supabase.txt`
-- jediné existující APK, `app-v3.0.8` (50 797 797 B), je podepsané **debug klíčem**, ne release klíčem.
-  Podpisový blok (v2, id `0x7109871a`) dává certifikát:
-  - `CN=Android Debug, OU=Android, O=Unknown, L=Unknown, ST=Unknown, C=US`
-  - serial `232eae62`, platnost **2013-12-31 → 2052-04-30**, `SHA1withRSA`, RSA **2048**
-  - SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`
+## Data — 278 řádků ve 12 tabulkách (ověřeno živým dotazem, `Prefer: count=exact`)
 
-Tenhle klíč nepatří nikomu v tomhle repozitáři a není dostupný — je to debug keystore
-runneru, který se mezi buildy mění. **Důsledek: „aplikace se aktualizuje sama" nikdy
-nebylo prokázáno a před 5. 10. 2026 to neplatilo vůbec.**
+| Tabulka | Řádků |
+|---|---|
+| `sc_lyrics` | 74 |
+| `agent_action_log` | 60 |
+| `sc_songs` | 31 |
+| `agent_videos` | 27 |
+| `sc_video_jobs` | 23 |
+| `sc_audio_versions` | 23 |
+| `agent_messages` | 16 |
+| `sc_albums` | 6 |
+| `youtube_publications` | 5 |
+| `sc_cover_jobs` | 5 |
+| `agent_conversations` | 5 |
+| `agent_image_assets` | 3 |
+| **součet** | **278** |
 
-- nový release klíč byl 5. 10. 2026 vygenerován znovu a uložen **mimo repozitář** do
-  `SCS2-secrets/songcraft-release.jks` (JKS, RSA 4096, alias `songcraft`, platnost 100 let,
-  3 925 B); heslo je v `SCS2-secrets/Keystore.txt` a v GitHub Secrets
-- **kterýkoliv přechod na tohle APK vyžaduje jednorázovou ruční instalaci** (odinstalovat
-  starou app, nainstalovat znovu). Od toho prvního ručního kroku fungují další aktualizace
-  přes aplikaci, protože od té doby všechny buildy používají stejný klíč.
+Přes PostgREST je vystaveno **27 tabulek** (`sc_rhyme_words`, `sc_style_prompts`,
+`agent_ops`, `motion_recipes`, `youtube_stats`, … jsou prázdné).
 
-## Odstranění veřejných videí
+**Záměrně vyloučeno při importu (a proto prázdné, ne chybějící):**
+`youtube_credentials` = 0 řádků (tokeny starého projektu),
+`youtube_oauth_states` = 0 řádků (PKCE verifier + redirect URI starého hostu).
+`youtube_publications` má 5 řádků z importu — jde o metadata, ne o tokeny.
 
-- release `songcraft-videos` měl 2 veřejná MP4 (35,7 MB + 48,5 MB) z 21. 9. 2026
-- oba dotčené songy dostaly soukromé náhradní rendery (`58ecdf30` pro `0c6d3151`, `b6780201` pro `e1c8326f`)
-- assety, release i tag smazány; oba veřejné URL vracejí 404
-- zbývají pouze APK release (distribuce aplikace)
+## YouTube — co reálně umí a co ne
 
-## Živé testy produkční brány (`pnpm test:live`)
+- `youtube-oauth-start` vrací **503** s výčtem chybějících hodnot. Neprodává
+  authorize URL, dokud nejsou secrets (viz `docs/YOUTUBE_OAUTH_RUNBOOK.md`).
+- `youtube-publish` vrací **412 „Nejdříve připoj YouTube OAuth účet.“**
+  `youtube_credentials` je prázdná a 412 je vědecký, ne chyba.
+- `youtube-status` vrací `{connected:false}`.
+- Publikace tedy **nejde**. Ruční kroky pro Google klienta jsou v
+  [`docs/YOUTUBE_OAUTH_RUNBOOK.md`](YOUTUBE_OAUTH_RUNBOOK.md).
+- Starý klíč `77741409309-…` v projektu `opencode-506810` patří SCS1. V SCS2
+  nefunguje — jiná redirect URI, jiný Supabase projekt. Nepoužívat.
 
-- 8/8 prošlo: 3 soukromé účty, assistant (401 bez JWT + odpověď přes Gemini), cover 16:9, Google AI Studio key, service role read-only
-- oprava: `vitest.config.ts` tyto testy vylučoval, takže `pnpm test:live` končil „No test files found"; přidán `vitest.live.config.ts`
+## Obaly — deklarace UI vs. reality
 
+Dnes **žádný kód v repu nekreslí text do obrazu** a **široký 16:9 obal se
+neskládá**. `songcraft-cover-ai` žádá AI Horde na **512 × 512**, větev
+`youtube_16_9` jen nahraje soubor do `covers/raw/`, `cover_path` nepřepíše a
+klient ho zahazuje. `scripts/render/compose-cover.mjs` je záměrný stub
+(`process.exit(1)`). Grep po `drawtext` / `fillText` / `canvas` / `ImageMagick` /
+`sharp` v repu vrací 0.
 
-## Oracle VM
+5. 10. 2026 opraveno **v UI** (texty už nelhát), ne v backendu — ten potřebuje
+renderer, který v repu není. Viz `docs/SONGCRAFT_SKILLS.md` § 14.
 
-- Node.js 22.23.3, `songcraft-renderer.service` active, work dir `/var/lib/songcraft-studio/work`
-- dashboard `127.0.0.1:8080` s basic auth (401 bez přihlášení), veřejně přes Caddy + Cloudflare tunel
-- starý worker vypnut, privátní fronta nahrazuje veřejné GitHub release
+## Brány — stav k 5. 10. 2026
 
-## Odstraněné bugy (nálezy z živého běhu)
+```
+node scripts/security-boundary-check.mjs    → security-boundary-check: OK
+node scripts/production-smoke-check.mjs    → production smoke structure: OK (11 migrations, 13 required files)
+node node_modules/typescript/bin/tsc --noEmit → 0 chyb
+node node_modules/vitest/vitest.mjs run    → 125 passed / 1 skipped (18 souborů + 1 přeskočený)
+```
 
-1. `pg_policy` sloupec `polname` (ne `policyname`) — shodil by hardening i core migraci
-2. ledger insert v runneru — špatné escapování `$` v `array[$$…$$]`
-3. preflight mlčel při chybě dotazu — teď fail-closed a kontroluje existující sloupce
-4. `songcraft-imports` 32 MB bundle → HTTP 413; řešeno server-side bundlingem (`--use-api`)
-5. `supabase secrets list --output json` jiný tvar než očekával grep → verifikace přes Management API
-6. NativeWind `forceWriteFileSystem` v CI → „Failed to get the SHA-1 for web.css"
-7. ffmpeg filter chain v workeru + detekce typu artworku
+## Releases
 
-## Zbývá za release gate (vyžaduje výslovné potvrzení uživatele)
+| Release | Datum |
+|---|---|
+| `app-v3.0.8` | 3. 10. 2026 |
+| `app-v3.0.9` | 5. 10. 2026 |
+| `app-v3.0.10` | 5. 10. 2026 |
 
-- reálný YouTube publish po confirmation nonce (veřejný zásah — neprovádím bez souhlasu)
-- `pnpm test:live` běžel a prošel; `image_animation`/`full_scenes` ověřeny na CPU-only VM
-- Android APK build přes CI workflow
-- rotace starých tokenů a API klíčů (odloženo podle zadání na release gate — nasazení a E2E hotovo, teď je poslední krok)
-- ukončení starého `video-agent` dispatcheru na VM, pokud už nová fronta pokrývá i AI režimy
+**Git tagy: 0** — releases jsou GitHub Releases, ne tagy. Staré tvrzení
+„repo má jediné release `app-v3.0.8`“ už neplatí.
 
+## Podepisování APK
+
+Platí závěr z opravy 5. 10. 2026 beze změny: **nikdy nebylo ověřeno**, že se
+aplikace aktualizuje sama. `app-v3.0.8` je podepsané **debug klíčem** runnera
+(`CN=Android Debug`), takže přechod na nové APK vyžaduje jednorázovou ruční
+instalaci. Nový release klíč byl vygenerován mimo repozitář
+(`SCS2-secrets/songcraft-release.jks`, heslo v `SCS2-secrets/Keystore.txt` a
+v GitHub Secrets `CI_KEYSTORE`/`CI_KEYSTORE_PASS`/`CI_KEY_ALIAS`).
+
+## Co zbývá — a co nejde udělat kódem
+
+1. **Google Cloud OAuth klient.** Ruční konzole. → `docs/YOUTUBE_OAUTH_RUNBOOK.md`
+2. **Aplikovat `20261004000000_agent_ops_rls_policies.sql`** na SCS2.
+3. **`OPENROUTER_API_KEY` / `DEEPSEEK_API_KEY`** do Supabase secrets, jinak
+   fallback řetězec v `agent-orchestrator` skončí na `openrouter:no-key`.
+4. **`SYNC_STATS_CRON_SECRET` / `PUBLISH_SCHEDULER_SECRET`** — bez nich
+   `youtube-sync-stats` a `youtube-publish-scheduler` (obě `verify_jwt = false`)
+   odmítají plánovač.
+5. **Široký 16:9 obal** — chybí renderer obrazu. Viz výše.
+6. **Skutečný publish na YouTube** — veřejný zásah, nikdy bez výslovného
+   schválení majitele.
+
+---
+
+## SCS1 – jen historie
+
+Následující nálezy byly ověřeny 25.–26. 9. 2026 na projektu
+`hfykngbhcxmnpxvjagoj` a **o SCS2 nic nevypovídají**. Nezakládat na nich nic.
+
+- Živé E2E 15/15, 24 songů / 20 audio verzí / 10 jobů ve frontě.
+- Video pipeline: `static_cover` × 6, `image_animation` × 1, `full_scenes` × 1,
+  `ready`; 10–18 MB MP4; chybějící čárka před `format=yuv420p` v filter chainu.
+- Odstranění veřejných videí z release `songcraft-videos` (35,7 MB + 48,5 MB).
+- Oracle VM: Node.js 22.23.3, `songcraft-renderer.service` active, dashboard
+  `127.0.0.1:8080` za basic auth.
+- Sedm odstraněných bugů z živého běhu (`pg_policy.polname`, ledger escaping `$`,
+  mlčící preflight, 32 MB bundle → HTTP 413, tvar `supabase secrets list`,
+  NativeWind `forceWriteFileSystem`, ffmpeg filter chain).

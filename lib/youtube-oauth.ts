@@ -29,6 +29,8 @@ export const YOUTUBE_OAUTH_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/youtube-
  * Klíče odpovídají `redirect("error", { reason })` v této edge funkci.
  */
 const YOUTUBE_OAUTH_FAILURES: Record<string, string> = {
+  denied: "Připojení jsi v Google zrušil. Kanál zůstal nepřipojený.",
+  google_error: "Google vrátil chybu a kanál nebyl připojený.",
   invalid_request: "Google poslal neúplnou odpověď. Připojení to ještě zopakuj.",
   not_configured: "Na serveru chybí YOUTUBE_CLIENT_ID nebo YOUTUBE_CLIENT_SECRET. Bez nich se token nevymění.",
   invalid_state: "Připojení vypršelo nebo bylo zrušené. Spusť ho prosím znovu.",

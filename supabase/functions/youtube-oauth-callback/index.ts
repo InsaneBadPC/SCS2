@@ -29,6 +29,10 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers: cors });
   const requestUrl = new URL(request.url);
+  // Google posílá `?error=access_denied` a žádný code, když uživatel v konzoli
+  // klikne na „Zrušit“. Bez zvláštní větve by to spadlo do `invalid_request` a
+  // aplikace by tvrdila, že Google poslal neúplnou odpověď.
+  if (requestUrl.searchParams.get("error")) return redirect("error", { reason: requestUrl.searchParams.get("error") === "access_denied" ? "denied" : "google_error" });
   const code = requestUrl.searchParams.get("code")?.trim() ?? "";
   const state = requestUrl.searchParams.get("state")?.trim() ?? "";
   if (!code || !state || state.length > 256 || code.length > 2048) return redirect("error", { reason: "invalid_request" });

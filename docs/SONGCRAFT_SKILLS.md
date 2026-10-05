@@ -12,30 +12,27 @@ Když něco nešlo ověřit, je to v textu označené jako **NE OVĚŘENO**.
 |---|---|
 | Pracovní kopie | `/data/data/com.termux/files/home/work/songcraft-studio` |
 | Git branch (aktuální) | `main` |
-| Verze, po které poznat správné repo | **`3.x`** – když vypišeš `2.9.1`, jsi ve špatné kopii |
-| Druhá kopie na sdcard | `/storage/emulated/0/InsaneCode/songcraft-studio` (2.9.1, mrtvá) — viz 11g |
-| `node_modules` | bind mount z vnitřního úložiště, viz 11g |
-| Zálohy | `/storage/emulated/0/InsaneCode/songcraft-backup-20260925.zip`, `songcraft-secrets-encrypted-20260925.zip` (+ `.sha256`) |
-| Secrety (mimo repo) | `~/InsaneCode/secrets/edge-functions.env` (16 klíčů), `songcraft-release.jks`, `songcraft-release.pass` |
-| Další secrety | `/storage/emulated/0/InsaneCode/Secret/` (Oracle, YouTube client_secret, `PRISTUPOVE-ÚDAJE.md`) |
-| Supabase projekt | `hfykngbhcxmnpxvjagoj` |
+| Supabase projekt | `gpgbgjxeybfncrexrpbr` |
+| Supabase region | **`eu-west-2` (Londýn)** — ověřeno v `.env.local` (`SUPABASE_REGION`) |
 | GitHub | `InsaneBadPC/SCS2` (public) |
+| Git remote | `git@…`/`https://github.com/InsaneBadPC/SCS2.git` |
+| Git tagy | **0** (release tagy nejsou git tagy, ale GitHub Releases) |
 | Stack | Expo SDK 54, RN 0.81.5, React 19.1, expo-router 6, TS strict, NativeWind 4, TanStack Query 5, Supabase, Vitest 2 |
-| Verze v `package.json` | `2.9.1` (APK release má `2.9.4` – verzi propíše workflow před prebuildem) |
-| Nástroje v Termuxu | `ffmpeg 8.1.3`, `deno`, `supabase`, `gh 2.101.0` (bez auth), `node 22`, `python 3.14` |
-| Staré sessions opencode | `~/.local/share/opencode/opencode.db` → tabulky `session_v2`, `session_message` (2431 zpráv) |
+| Verze v `package.json` | `3.0.8` |
+| GitHub Releases | `app-v3.0.8`, `app-v3.0.9`, `app-v3.0.10` |
+| Nástroje v Termuxu | `ffmpeg`, `deno`, `supabase`, `gh` (bez auth), `node`, `python` |
+
+> Tabulka výše byla do 5. 10. 2026 psaná pro **původní** projekt
+> (`hfykngbhcxmnpxvjagoj`). Řádky o starém projektu, starých účtech
+> `@songcraft.test` a starém Google klíči byly nahrazeny platnými údaji SCS2.
+> Starý projekt zůstává čitelný, ale **nikdy do něj nezapisuj**.
 
 ### Účty (izolace dat)
 
-| E-mail | `user_id` |
-|---|---|
-| `temney@songcraft.test` | `99dacb87-b331-4069-9b15-61c06bd76bdd` |
-| `verca@songcraft.test` | `f28d7833-3c74-483d-8620-2316f79f296c` |
-| `dj.palacinka@songcraft.test` | `daa9c6dc-eb23-48c2-b422-2a6e145c80f8` (zatím bez skladeb) |
-
-Alba: `Myšlenkovej Boom` = `c3398ce7-c442-4e59-8621-67f25ead6d80`,
-`Kid of Street` = `6264b402…`, `Síla ve mě` = `621e4acc…`, `Pro Maminku` = `56a63de6…`,
-`Zrůda mě porodila` = `083d5b2c…`
+Účty v SCS2 jsou **jiné než ve starém projektu** a mají doručitelné e-maily
+(`@songcraft.test` je rezervovaná RFC 2606 TLD a resetovací e-mail na ni
+nechodí). Přesné adresy jsou v `SCS2-secrets/Keystore.txt` a v
+`scripts/account-remap.json` — neopisuj je sem, patří do tajných souborů.
 
 ---
 
@@ -54,10 +51,13 @@ Kde co žije:
 - `app/` – expo-router routy. `app/(tabs)/` = 6 tabů (Přehled, Texty, Knihovna, Asistent, Nastavení + skryté Alba), `app/song/[id].tsx` = detail skladby + verze MP3, `app/export/youtube.tsx` = export MP4, `app/auth.tsx` = soukromé přihlášení.
 - `lib/external-studio.ts` – **jediná skutečná datová vrstva**. Každý read/write má `.eq("user_id", user.id)`.
 - `lib/agent-api.ts` – jediná hranice klient → AI agent.
-- `supabase/functions/` – 14 aktivních Edge Function + `_shared/`.
-- `supabase/migrations/` – 13 migrací, zdroj pravdy pro DB.
+- `supabase/functions/` – **18 aktivních Edge Function** + `_shared/`. Počet ověř:
+  `ls -1 supabase/functions/*/index.ts | wc -l` (direktář `_shared/` není funkce).
+- `supabase/migrations/` – **19 migrací**, zdroj pravdy pro DB.
+  `ls -1 supabase/migrations/*.sql | wc -l`.
 - `workers/video-renderer/worker.mjs` – ffmpeg worker na Oracle VM.
-- `docs/` – plány a stav. `docs/VERIFICATION_STATUS.md` = poslední ověřený stav nasazení.
+- `docs/` – plány a stav. `docs/VERIFICATION_STATUS.md` = poslední ověřený stav nasazení,
+  `docs/YOUTUBE_OAUTH_RUNBOOK.md` = ruční kroky pro Google OAuth klienta.
 - `supabase_songcraft_*.json` v rootu – **legacy snapshoty, ne zdroj pravdy**. Pro nové změny je zdrojem pravdy `supabase/functions/` + `supabase/migrations/`.
 
 **Dead code, nehledat ho:** `server/**` a `lib/_core/**` jsou pozůstatky Manus backendu
@@ -340,48 +340,29 @@ Další fakta:
 
 - 30min cache (GitHub bez tokenu má 60 req/h na IP), banner při startu + ruční
   kontrola v Nastavení, přeskočení verze.
-- `versionCode` = max předchozího vydání + 1. **Staré APK je podepsané jiným klíčem**,
-  proto je nutné před 2.9.3 starou app odinstalovat a nainstalovat ručně.
+- `versionCode` = max předchozího vydání + 1. **APK podepsané debug klíčem
+  (starší než `app-v3.0.9`) je nutné odinstalovat a nainstalovat ručně** —
+  viz `docs/VERIFICATION_STATUS.md`, sekce „Oprava 5. 10. 2026“.
 - Podepisování: `scripts/configure-android-signing.mjs` po prebuildu přepojí `release`
   buildType z debug klíče runnera na `CI_KEYSTORE` / `CI_KEYSTORE_B64` (jinak se debug
   klíč mezi buildu mění a update nejsou proveditelné). Klíč jen v GitHub Secrets.
 
-### Stav repozitáře k 28. 9. 2026 (ověřeno přes API)
+### Stav repozitáře k 5. 10. 2026 (ověřeno přes API)
 
-| Větev | SHA | Poznámka |
-|---|---|---|
-| `dev/ai-manager-studio` | `398871cf` | **HEAD, nejnovější kód** |
-| `main` | `8ca9787f` | **29 commitů pozadu** (`status: ahead`, `behind: 0`) |
-| `experiment/cover-image-mp3-fix` | `8e1b51a3` | experiment |
-| `experiment/google-ai-studio` | `e8ac4a2f` | experiment |
+| Větev | Poznámka |
+|---|---|
+| `main` | jediná větev, zdroj pravdy, `default_branch` na GitHubu |
 
-Release `app-v2.9.4` byl sestaven **z `398871cf`** (tělo release: „Automatické sestavení
-po změně `398871cf`“, 2.9.4, versionCode 20904, sha256 `13533f0b…`), ale jeho
-`target_commitish` ukazuje na `main`. **Ano – release je z nejnovějšího kódu.**
+Původní tabulka s `dev/ai-manager-studio` a experimentálními větvemi patřila starému
+repu; po přesunu do SCS2 zůstala `main` jediná a žádné z těchto větví neexistuje.
+Ověřit: `git branch -a` a `gh api repos/InsaneBadPC/SCS2 --jq .default_branch`.
 
-Nedalo se to udělat, protože **na tomhle zařízení není přihlazený GitHub** –
-`gh auth status` hlásí „not logged in“, `GH_TOKEN` chybí. Bez tokenu nelze pushnout.
+Releases jsou **GitHub Releases, ne git tagy** (`git tag` vrací 0). Aktuálně
+`app-v3.0.8`, `app-v3.0.9`, `app-v3.0.10`.
 
-Co by se muselo udělat po doplnění auth (a po mém potvrzení – je to nevratné):
-
-```bash
-git fetch origin
-git push origin dev/ai-manager-studio:main --force-with-lease   # NE force, viz níže
-```
-
-Doporučení, ne postup: **nepoužívej force.** Bezpečnější je fast-forward nebo merge:
-
-```bash
-git checkout main && git pull --ff-only
-git merge --no-ff origin/dev/ai-manager-studio -m "sync: dev/ai-manager-studio -> main"
-git push origin main
-```
-
-A pozor na `main` jako zdroj pravdy pro `build-apk.yml`: release tagy míří na `main`,
-takže po přesunu `main` dopředu začnou tagy ukazovat na novější kód – to je žádoucí
-chování, ale zároveň to znamená, že **každý push na `main` spustí nový APK release**.
-A nedělej to dřív, než je zelené CI na `398871cf` (viz B1), jinak se rozbije build
-i pro uživatele, kteří si 2.9.4 nainstalovali.
+Pozor na `main` jako zdroj pravdy pro `build-apk.yml`: **každý push na `main`
+spustí nový APK release.** Než se do toho pustíš, ověř, že je zelené CI —
+jinak rozbiješ build i pro uživatele, kteří si předchozí APK nainstalovali.
 
 ---
 
@@ -478,9 +459,9 @@ zůstane viset ve stavu `running`. Obě chyby se projeví jako „fronta je prá
 | `is_primary`/`is_final` při nové verzi | přepíše existující primární/final verzi | `false`, flagy měnit záměrně |
 | Velký soubor base64 přes `Input.insertText`/JSON | OOM na Androidu | `assetToArrayBuffer` (viz `lib/file-base64.ts`) |
 | Loop z 5s klipu bez crossfade | viditelný střih každých 5 s | crossfade loop (skill 5) |
-| Center-crop 9:16 na širokém obalu | roztrhaný název skladby | rozmazané pozadí |
+| Center-crop 9:16 na širokém obalu | roztrhaný název skladby | rozmazané pozadí (a obal je stejně dnes bez textu, viz § 14) |
 | Věřit, že „APK release existuje“ = „funkcionuje“ | `Build Android APK` běží paralelně k CI | zkontrolovat `SongCraft CI` i `Deploy agent orchestrator` |
-| Tlačit `main` s červeným CI | rozbije build uživatelům s 2.9.4 | nejdřív opravit B1–B4 |
+| Tlačit `main` s červeným CI | rozbije build uživatelům | nejdřív opravit, pak pushnout |
 | `ffprobe -of default=nw=1:nk=1` | zahodí názvy polí, validace `width=` padne vždy | `default=nw=1` |
 | Filtr `reverse` na dlouhém úseku | bufferuje celý úsek, OOM na 954 MB VM | půlcyklus A max 1.5 s |
 | Počet průchodů úměrný délce skladby | 6:18 song = 47 průchodů, hodiny kódování | 6–16 průchodů, delší úseky |
@@ -615,28 +596,40 @@ Stejný klíč ⇒ **stejný SHA-256**. To je jediná spolehlivá kontrola; odha
 
 ## 11c. SKILL: OAuth na YouTube, jak ho rozchodit bez konzole
 
-Google klíč `77741409309-…` v projektu `opencode-506810` je typu **Desktop app**
-a má zaregistrované **jen `http://localhost`**. Adresa
-`https://…supabase.co/functions/v1/youtube-oauth-callback` u Google evidovaná
-není, takže jakýkoli odkaz s ní skončí `redirect_uri_mismatch` — a to
-**neopraví kódem**.
+> **V SCS2 jde o jiný klient než v SCS1.** Starý klient `77741409309-…` v projektu
+> `opencode-506810` patří původnímu projektu a jeho redirect je jiný — v SCS2 ho
+> nepoužij. SCS2 běží na Supabase projektu `gpgbgjxeybfncrexrpbr` a potřebuje
+> vlastního klienta. **Kompletní ruční postup je v
+> [`docs/YOUTUBE_OAUTH_RUNBOOK.md`](YOUTUBE_OAUTH_RUNBOOK.md)** — tam jsou typ
+> klienta, tři scopes, přesná redirect URI a tři názvy secretů.
 
-Dvě cesty:
+Tři věci, které stojí za každým selháním:
 
-**A) Zprovoznit tlačítko v aplikaci** – v Google Cloud Console u klíče přidat tu
-Supabase adresu do *Authorized redirect URIs*, nebo vytvořit klíč typu
-**Web application**. Bez zásahu do konzole to nejde.
-
-**B) Připojit kanál bez konzole** (použito 29. 9. 2026, fungovalo):
-`http://localhost` je registrovaný, takže stačí na telefonu poslouchat port 80,
-Google přesměruje na něj a kód se vymění za tokeny s PKCE verifierem uloženým
-v `youtube_oauth_states`. Termux umí port 80 (běží jako root v kontejneru) a
-`termux-open-url` otevře Google ve formuláři na telefonu.
+1. **Klient musí být typu `Web application`, ne `Desktop app`.** Desktop klient
+   přijímá jen loopback redirect (`http://localhost`), ne
+   `https://…supabase.co/functions/v1/youtube-oauth-callback`. Špatný typ →
+   `redirect_uri_mismatch`, a to **neopraví kódem**.
+2. **`redirect_uri` musí být znak po znaku stejná** v Authorized redirect URIs
+   u klienta i v Supabase secretu `YOUTUBE_REDIRECT_URI`. Kód posílá hodnotu
+   secretu doslova a Google ji porovnává doslova. Není tu žádná normalizace.
+3. **YOUTUBE Data API v3 musí být zapnuté** na Google Cloud projektu. Bez ní
+   spadne `channels?mine=true` v callbacku a UI skončí na `channel_lookup_failed`.
 
 **OAuth consent screen v režimu Testing zabíjí refresh token po 7 dnech.**
 Google vrací `invalid_grant / Token has been expired or revoked`. Není to chyba
-našeho kódu. Řešení: přepnout na Production, nebo (prakticky) prostřednictvím
-kroku B připojit znovu, když token umře.
+našeho kódu. Řešení: přepnout na Production.
+
+Dvě pasti v kódu, které se už opravily (a kdyby se vrátily, tak to nepoznáš):
+
+- **`supabase.functions.invoke()` zahazuje konkrétní hlášku.** `error.message` je
+  vždycky jen `Edge Function returned a non-2xx status code`; tělo je v
+  `error.context` jako `Response` a jde přečíst **jen jednou**. Bez
+  `edgeFunctionErrorMessage()` v `lib/youtube-oauth.ts` by česká hláška
+  `youtube-oauth-start` „chybí YOUTUBE_CLIENT_ID“ nikdy nedošla do UI.
+- **Návrat do aplikace není úspěch.** `youtube-oauth-callback` přesměruje vždy,
+  i na chybu, a výsledek vepíše do `youtube` parametru. `openAuthSessionAsync`
+  přitom vrací `type: "success"` pro jakýkoli návrat na deep link. Bez
+  `readYouTubeOauthReturn()` by UI hlásilo „YouTube je připojený“ i po chybě.
 
 ---
 
@@ -780,7 +773,8 @@ Otevřené body, které z nich vyplynuly a které v `todo-dee7naux.md` ještě n
 
 - [ ] ověřit web export a sestavit APK z izolované větve
 - [ ] předat odkaz na APK
-- nahrát obrázek 16:9 + MP4→loop (viz B1–B3)
+- [ ] nahrát obrázek 16:9 + MP4→loop (viz B1–B3) — **přestože 16:9 obal
+      dnes neskládá žádný kód, viz § 14**
 - animace obrazu podle promptu – **u každé fotky něco jiného, žádné blesky, žádný dým,
   žádné ruské kolo** (doslovné zadání v session `seq 15258`)
 
@@ -789,11 +783,11 @@ Otevřené body, které z nich vyplynuly a které v `todo-dee7naux.md` ještě n
 ## 13. Ověřovací checklist pro „hotovo“
 
 ```bash
-cd /data/data/com.termux/files/home/work/songcraft-studio
-node scripts/security-boundary-check.mjs          # OK
-node scripts/production-smoke-check.mjs          # OK
-npx tsc --noEmit                                 # 0 chyb
-npx vitest run                                   # 66 passed
+cd /data/data/com.termux/files/usr/tmp/kilo  # nebo kam je repo
+node scripts/security-boundary-check.mjs          # security-boundary-check: OK
+node scripts/production-smoke-check.mjs          # production smoke structure: OK
+node node_modules/typescript/bin/tsc --noEmit    # 0 chyb
+node node_modules/vitest/vitest.mjs run          # 125 passed / 1 skipped
 find supabase/functions -mindepth 2 -maxdepth 2 -name index.ts -print0 \
   | xargs -0 -n1 deno check --config supabase/functions/deno.json \
       --node-modules-dir=auto --no-lock          # bez chyb
@@ -803,7 +797,27 @@ A navíc, ručně, protože to neautomatizuje nic:
 
 - [ ] na GitHubu `SongCraft CI` = success **na tom commitu, který pushuješ**
 - [ ] `Deploy agent orchestrator` = success (jinak funkce běží stará)
-- [ ] `main` není 30 commitů pozadu
-- [ ] release tag míří na commit, z kterého je opravdu sestavené APK
+- [ ] `main` je pushnutý a nepozadu
+- [ ] release míří na commit, z kterého je opravdu sestavené APK
 - [ ] nic veřejného neuniklo (release assets, bucket policy)
 - [ ] YouTube zveřejnění má **výslovné schválení uživatele**
+- [ ] YouTube OAuth klient existuje a `node scripts/verify-edge-secrets.mjs --profile youtube` prochází
+      (jinak viz [`docs/YOUTUBE_OAUTH_RUNBOOK.md`](YOUTUBE_OAUTH_RUNBOOK.md))
+
+## 14. Co v repu chybí a UI o tom nesmí lhát
+
+Dva známé otvory. Oba jsou vědomé, oba se promítly do textu v UI a oba jsou
+opravené v tom, že UI **řekne pravdu** — ne v tom, že by chybějící kód vznikl.
+
+1. **Široký 16:9 obal se neskládá.** `songcraft-cover-ai` větev `youtube_16_9`
+   vygeneruje AI obraz **512 × 512**, uloží ho do `covers/raw/` a
+   `cover_path` nepřepíše. `scripts/render/compose-cover.mjs` je záměrně mrtvý
+   stub (`process.exit(1)`). Žádný renderer obrazu v repu není — grep po
+   `drawtext` / `fillText` / `canvas` / `ImageMagick` / `sharp` vrací 0.
+2. **Text se do obalu nekreslí ani nebude.** Prompt to AI říká výslovně
+   („no lettering, no words, no logos, no watermark“) a backend nikde text
+   nepřidává. Interpret, album a název skladby jsou **data v `sc_songs`**, která
+   zobrazuje UI.
+
+Kdyby se to někdy mělo dodělat, musí přijít současně UI **i** backend — jinak se
+vrátí přesně tyhle lži, co jsme 5. 10. 2026 opravovali.
