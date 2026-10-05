@@ -66,9 +66,9 @@ const IMPACT = {
   SONGCRAFT_ALLOWED_EMAILS:
     'allowlist e-mailů — bez něj isAllowedPrivateUser zamítne všechny soukromé požadavky (fail-closed, 403)',
   YOUTUBE_CLIENT_ID:
-    'YouTube OAuth client ID — bez něj youtube-publish, youtube-sync-stats a youtube-oauth-start nedostanou OAuth token; YouTube cesta je postponed, zbývajících 14 funkcí deployuje bez ní',
+    'YouTube OAuth client ID — bez něj ji nedostanou 5 z 18 funkcí: youtube-oauth-start (nevytvoří authorize URL), youtube-oauth-callback, youtube-publish, youtube-sync-stats, youtube-status (nerefreshuje token). Zbývajících 13 funkcí je na tom nezávislých. Postup doplnění: docs/YOUTUBE_OAUTH_RUNBOOK.md',
   YOUTUBE_CLIENT_SECRET:
-    'YouTube OAuth client secret — bez něj youtube-publish, youtube-sync-stats a youtube-oauth-start nedostanou OAuth token; YouTube cesta je postponed, zbývajících 14 funkcí deployuje bez ní',
+    'YouTube OAuth client secret — bez něj ji nedostanou 4 z 18 funkcí: youtube-oauth-callback (token se nevymění), youtube-publish, youtube-sync-stats, youtube-status. Zbývajících 14 funkcí je na tom nezávislých. Postup doplnění: docs/YOUTUBE_OAUTH_RUNBOOK.md',
   YOUTUBE_REDIRECT_URI:
     'YouTube OAuth redirect URI — bez něj youtube-oauth-start nevygeneruje platnou autorizační URL',
   SONGCRAFT_APP_REDIRECT_URL:

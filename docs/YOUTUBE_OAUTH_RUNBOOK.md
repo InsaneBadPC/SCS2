@@ -81,14 +81,21 @@ Proto:
 ## 3. Tři hodnoty do Supabase
 
 Supabase Dashboard → **Project Settings → Edge Functions → Secrets** →
-**Add new secret**. Následující příkaz udělá totéž (nikdy nevypisuje hodnotu):
+**Add new secret**. Totéž umí příkaz. Hodnoty si připrav v prostředí — klíč
+nikdy nepiš do repa a nechci ho v shell history:
 
 ```bash
+export YOUTUBE_CLIENT_ID='…'       # Credentials → tvůj klient (…apps.googleusercontent.com)
+export YOUTUBE_CLIENT_SECRET='…'   # Credentials → tvůj klient
+
 supabase secrets set --project-ref gpgbgjxeybfncrexrpbr \
-  YOUTUBE_CLIENT_ID='<client id z Google>' \
-  YOUTUBE_CLIENT_SECRET='<client secret z Google>' \
-  YOUTUBE_REDIRECT_URI='https://gpgbgjxeybfncrexrpbr.supabase.co/functions/v1/youtube-oauth-callback'
+  YOUTUBE_CLIENT_ID=$YOUTUBE_CLIENT_ID \
+  YOUTUBE_CLIENT_SECRET=$YOUTUBE_CLIENT_SECRET \
+  YOUTUBE_REDIRECT_URI=https://gpgbgjxeybfncrexrpbr.supabase.co/functions/v1/youtube-oauth-callback
 ```
+
+Klíč, který by utekl do historie shellu, v Google Cloud smaz a založ nový.
+Výsledek ověř krokem níže — `supabase secrets list` hodnoty nevypisuje.
 
 | Secret | Co je to |
 |---|---|

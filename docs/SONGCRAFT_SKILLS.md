@@ -16,7 +16,7 @@ Když něco nešlo ověřit, je to v textu označené jako **NE OVĚŘENO**.
 | Supabase region | **`eu-west-2` (Londýn)** — ověřeno v `.env.local` (`SUPABASE_REGION`) |
 | GitHub | `InsaneBadPC/SCS2` (public) |
 | Git remote | `git@…`/`https://github.com/InsaneBadPC/SCS2.git` |
-| Git tagy | **0** (release tagy nejsou git tagy, ale GitHub Releases) |
+| Git tagy | `app-v3.0.8`, `app-v3.0.9`, `app-v3.0.10` — stejná jména jako releases, ale `git tag` je vidí **až po `git fetch`** |
 | Stack | Expo SDK 54, RN 0.81.5, React 19.1, expo-router 6, TS strict, NativeWind 4, TanStack Query 5, Supabase, Vitest 2 |
 | Verze v `package.json` | `3.0.8` |
 | GitHub Releases | `app-v3.0.8`, `app-v3.0.9`, `app-v3.0.10` |
@@ -340,9 +340,12 @@ Další fakta:
 
 - 30min cache (GitHub bez tokenu má 60 req/h na IP), banner při startu + ruční
   kontrola v Nastavení, přeskočení verze.
-- `versionCode` = max předchozího vydání + 1. **APK podepsané debug klíčem
-  (starší než `app-v3.0.9`) je nutné odinstalovat a nainstalovat ručně** —
-  viz `docs/VERIFICATION_STATUS.md`, sekce „Oprava 5. 10. 2026“.
+- `versionCode` = max předchozího vydání + 1. **`app-v3.0.8` je podepsané debug
+  klíčem runnera**, takže přechod na tohle APK je nutné udělat ručně
+  (odinstalovat starou app, nainstalovat znovu). Podepis `app-v3.0.9` a
+  `app-v3.0.10` nebyl v tomto dokumentu ověřen — nehádej, zkus to
+  `apksigner verify --print-certs` nad staženým APK. Viz
+  `docs/VERIFICATION_STATUS.md`, sekce „Podepisování APK“.
 - Podepisování: `scripts/configure-android-signing.mjs` po prebuildu přepojí `release`
   buildType z debug klíče runnera na `CI_KEYSTORE` / `CI_KEYSTORE_B64` (jinak se debug
   klíč mezi buildu mění a update nejsou proveditelné). Klíč jen v GitHub Secrets.
@@ -357,8 +360,8 @@ Původní tabulka s `dev/ai-manager-studio` a experimentálními větvemi patři
 repu; po přesunu do SCS2 zůstala `main` jediná a žádné z těchto větví neexistuje.
 Ověřit: `git branch -a` a `gh api repos/InsaneBadPC/SCS2 --jq .default_branch`.
 
-Releases jsou **GitHub Releases, ne git tagy** (`git tag` vrací 0). Aktuálně
-`app-v3.0.8`, `app-v3.0.9`, `app-v3.0.10`.
+Releases **i** git tagy sdílejí jména: `app-v3.0.8`, `app-v3.0.9`, `app-v3.0.10`.
+`git tag` vrací 0, dokud nespočneš `git fetch` — nenech se tím zmást.
 
 Pozor na `main` jako zdroj pravdy pro `build-apk.yml`: **každý push na `main`
 spustí nový APK release.** Než se do toho pustíš, ověř, že je zelené CI —

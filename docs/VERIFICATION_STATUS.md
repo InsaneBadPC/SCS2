@@ -116,14 +116,17 @@ node node_modules/vitest/vitest.mjs run    → 125 passed / 1 skipped (18 soubor
 
 ## Releases
 
-| Release | Datum |
-|---|---|
-| `app-v3.0.8` | 3. 10. 2026 |
-| `app-v3.0.9` | 5. 10. 2026 |
-| `app-v3.0.10` | 5. 10. 2026 |
+| Release | Git tag | Datum |
+|---|---|---|
+| `app-v3.0.8` | `app-v3.0.8` | 3. 10. 2026 |
+| `app-v3.0.9` | `app-v3.0.9` | 5. 10. 2026 |
+| `app-v3.0.10` | `app-v3.0.10` | 5. 10. 2026 |
 
-**Git tagy: 0** — releases jsou GitHub Releases, ne tagy. Staré tvrzení
+Release **i** git tag mají stejné jméno, takže obojí sedí. Staré tvrzení
 „repo má jediné release `app-v3.0.8`“ už neplatí.
+
+> Pozor na past: `git tag` vrací 0, dokud neproběhne `git fetch`. Bez fetchu
+> vypadá repo jako bez tagů, i když jsou tam všechny.
 
 ## Podepisování APK
 
