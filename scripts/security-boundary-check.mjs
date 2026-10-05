@@ -23,7 +23,11 @@ const rules = [
   { id: "github-token", pattern: /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g },
   { id: "slack-token", pattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g },
   { id: "jwt-literal", pattern: /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g },
-  { id: "hardcoded-secret-assignment", pattern: /\b(?:SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|YOUTUBE_CLIENT_SECRET|GOOGLE_AI_STUDIO_KEY|GEMINI_API_KEY)\s*[:=]\s*["'][^"']{20,}["']/gi },
+  // Jen na jednom řádku: `\s` by přeskočil zalomení řádku a pravidlo by chytilo
+  // KLÍČ → popis v mapě `IMPACT` v `verify-edge-secrets.mjs` jako "tajnou hodnotu".
+  // Skutečně natvrdo zapsaný klíč je vždy `NAME = "hodnota"` na jednom řádku;
+  // hodnoty samotné chytí ostatní pravidla (`sb_secret_`, `AIza`, `sk-`, `gh?_`).
+  { id: "hardcoded-secret-assignment", pattern: /\b(?:SUPABASE_SERVICE_ROLE_KEY|SUPABASE_SECRET_KEY|YOUTUBE_CLIENT_SECRET|GOOGLE_AI_STUDIO_KEY|GEMINI_API_KEY)[ \t]*[:=][ \t]*["'][^"'\n]{20,}["']/gi },
 ];
 
 const findings = [];
