@@ -27,6 +27,14 @@ const clean = (value: unknown) => typeof value === "string" ? value.trim().slice
 const RHYME_MODEL = "nvidia/nemotron-3-super-120b-a12b";
 
 /**
+ * Rozpočet odpovědi v tokenech. `llm.ts` přičte `reasoningCost`, takže na
+ * provider letí ~2968 tokenů. Naměřeno živě: pod ~2232 model vrací
+ * `content: null` (2 běhy na `sen`, 2 na `srdce`), nad ~3000 odpovídá za 7–15 s.
+ * Mezi těmito hodnotami je to dráha, ne přesná hranice, proto je 2200 s rezervou.
+ */
+const RHYME_MAX_TOKENS = 2_200;
+
+/**
  * Rozpočet JEDNOHO pokusu. Naměřeno živě: 20–45 s na NVIDIA, bez tohoto knobu
  * (viz `providerExtraBody`), protože reasoning si bere většinu rozpočtu.
  */
@@ -106,22 +114,23 @@ Deno.serve(async (request) => {
   let skip = [...exclude];
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
-  // Výsledky se SBÍRÁJÍ, ne přepisují. Změřeno živě 2026-10-05: druhý pokus
-  // se striktnějším promptem vracel HORŠÍ výsledek než první (ke „sen“ první
-  // „ven, den“, druhý jen prázdno a assonance „ne“). Kdyby se výsledek přepsal,
-  // uživatel by za dvojnásobný čas dostal horší odpověď. Každá položka navíc
-  // už prošla kontrolou, takže sjednocení je bezpečné.
-  const merge = (next: GuardedRhymes): GuardedRhymes => {
-    const uniq = (a: string[], b: string[], limit: number) =>
-      [...new Set([...a, ...b].map((entry) => entry.trim().toLocaleLowerCase("cs-CZ")))]
-        .slice(0, limit);
-    return {
-      exact: uniq(guarded.exact, next.exact, 12),
-      multiword: uniq(guarded.multiword, next.multiword, 12),
-      assonance: uniq(guarded.assonance, next.assonance, 8),
-      rejected: [...new Set([...guarded.rejected, ...next.rejected])].slice(0, 24),
-    };
-  };
+  // Výsledky se SLUČUJÍ, ale ne naslepo. Druhý pokus VÍ, které tvary byly
+  // vyhozené, takže je informovanější — jen nesmí přepsat lepší první pokus.
+  //
+  // Naměřeno 2026-10-05: `merge` ve starší podobě (když druhý pokus vrátil
+  // cokoli, vyhrál on) při živém testu ke „srdce“ vrátil deset vymyšlenin
+  // `ace, ece, ice, oce, uce…` místo funkčních `konce, svíce, prince`. Prostý
+  // „ber druhý, pokud něco má“ je tedy špatné.
+  //
+  // Pořadí se rozhoduje SKÓREM, ne přítomností:
+  //   1. `exact` je to, na co se uživatel ptal — nejvíc položek vyhrává,
+  //   2. při shodě multiword (skupinová rýma),
+  //   3. při shodě assonance (volný rým, nejdřívější přijde),
+  //   4. při úplné shodě vyhrává druhý pokus — je informovanější.
+  const score = (value: GuardedRhymes) =>
+    value.exact.length * 100 + value.multiword.length * 10 + value.assonance.length;
+  const merge = (next: GuardedRhymes): GuardedRhymes =>
+    score(next) >= score(guarded) ? next : guarded;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     // Druhý pokus musí mít reálný čas, jinak by to byl visící požadavek.
@@ -143,15 +152,16 @@ Deno.serve(async (request) => {
         system: buildInstruction(skip) + (attempt === 0 ? "" : strictSuffix(guarded.rejected)),
         messages: [{ role: "user", content: `Rýmy ke slovu: ${word}` }],
         temperature: attempt === 0 ? 0.8 : 0.4,
-        maxTokens: 4_000,
+        maxTokens: RHYME_MAX_TOKENS,
         json: true,
         timeoutMs: Math.min(ATTEMPT_TIMEOUT_MS, left),
         prefer: [{ provider: "nvidia", model: RHYME_MODEL }],
-        // ŽÁDNÝ reasoning knob. Viz vysvětlení u `providerExtraBody` v
-        // `_shared/llm.ts`: `reasoning_effort:"low"` je na tomhle dotazu
-        // naměřeně ŠKODLIVÝ — 43 s a `content: null` místo 34 s a reálného
-        // výsledku. Zde se prosím neopravduje „zpátky“ na low.
-        providerExtraBody: {},
+        // Rozpočet ODPOVĚDI je 2200 a reasoning dostane svůj strop navíc. Je to
+        // výslovně jiný poměr než výchozí nastavení poskytovatele, a je to
+        // změřené, ne odhadnuté — viz `providerExtraBody` v `_shared/llm.ts`.
+        // Bez stropu reasoning model přemýšlí, dokud mu neshoří rozpočet, a pak
+        // nevrátí NIC (naměřeno: 7 běhů z 8 → `content: null`, 17–69 s).
+        providerExtraBody: { reasoning: { max_tokens: 1024 }, reasoning_effort: "low" },
       });
       raw = result.text;
     } catch (error) {

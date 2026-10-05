@@ -228,13 +228,24 @@ const PROVIDERS: ProviderCfg[] = [
       "nvidia/nemotron-3-ultra-550b-a55b",
       "openai/gpt-oss-20b",
     ],
-    // NVIDIA `reasoning: {max_tokens}` IGNORUJE (testováno — reasoning sežere
-    // celý `max_tokens` a vrátí se `content: null`). Její vlastní knoflík je
-    // `reasoning_effort`, který reasoning tokeny opravdu zkracuje (530 → 19).
-    extraBody: { reasoning_effort: "low" },
-    // `reasoning_effort: "low"` reasoning zkracuje, ne odstraňuje. Bez rezervy
-    // sežere odpověď — naměřeno živě: popisek skončil uprostřed slova
-    // („…sprcha z lou“) a odpověď asistenta na „Pokud chceš upravit dé“.
+    // Původní zdejší komentář tvrdil, že NVIDIA `reasoning: { max_tokens }`
+    // ignoruje a že jediný funkční knob je `reasoning_effort`. To se NEUKÁZALO
+    // jako pravda a bylo to vyřváno 2026-10-05 při ladění rýmů — 8 běhů na
+    // `nvidia/nemotron-3-super-120b-a12b`, stejný prompt, jediná změna je toto
+    // pole:
+    //   bez `reasoning`      → 7 z 8 běhů `finish_reason:"length"` + `content:null`
+    //                           (17–69 s, odpověď žádná)
+    //   s `reasoning`        → 8 z 8 běhů `finish_reason:"stop"` + obsah (7–15 s)
+    // Bez stropu reasoning model přemýšlí, dokud mu neshoří rozpočet, a pak
+    // nevrátí NIC. Strop je tedy na NVIDIA stejně důležitý jako na OpenRouteru.
+    //
+    // Toto je VÝCHOZÍ nastavení. Volající, kterému nevyhovuje (např.
+    // `songcraft-rhymes` to potřebuje jinak), si to přepíše přes
+    // `providerExtraBody` — viz jeho dokumentace.
+    extraBody: { reasoning: { max_tokens: 1024 }, reasoning_effort: "low" },
+    // Rezerva nad `max_tokens` volajícího, aby reasoning strop nesnědl odpověď.
+    // Naměřeno živě: bez rezervy popisek skončil uprostřed slova („…sprcha z lou“)
+    // a odpověď asistenta na „Pokud chceš upravit dé“.
     reasoningCost: 768,
     visionModels: [
       "meta/llama-3.2-90b-vision-instruct",
@@ -522,21 +533,19 @@ export async function llmComplete(opts: {
   /** Volitelné modely ZKOUŠENÉ PŘED výchozím řetězem (každá funkce má jiný). */
   prefer?: Attempt[];
   /**
-   * Přepíše tělo specifické pro poskytovatele na TENHLE POŽADAVEK.
-   * `{}` = poslat žádný knob.
+   * Přepíše tělo specifické pro poskytovatele na TENHLE POŽADAVEK — a JEN pro
+   * poskytovatele uvedeného v `prefer`. `{}` = poslat žádný knob.
    *
-   * Proč to existuje: `reasoning_effort: "low"` na NVIDIA je výhodné pro text
-   * (naměřeno 530 → 19 reasoning tokenů), ale u `songcraft-rhymes` s jeho
-   * dlouhým fonologickým zadáním škodí. Naměřeno živě 2026-10-05, stejný
-   * prompt, jen jiný knob:
-   *   `reasoning_effort:"low"` → 43 s, `finish_reason:"length"`, `content: null`
-   *                              (model přemýšlel, dokud mu neshořel rozpočet)
-   *   žádný knob              → 34 s, `finish_reason:"stop"`, reálný obsah
-   *                            („staré klece“, „zlaté svíce“ — což ke „srdce“
-   *                             skutečně rýmuje)
-   * Tedy: knob, který zkracuje reasoning, může u konkrétního dotazu naopak
-   * nechat model přemýšlet déle. Proto se to nesmí cpát do provider configu
-   * natvrdo, ale řídí se to u volajícího.
+   * Proč to existuje: výchozí nastavení poskytovatele nemusí vyhovovat každému
+   * dotazu. `songcraft-rhymes` má změřený jiný poměr reasoning a odpovědi než
+   * zbytek aplikace (viz jeho vlastní volání). Kdyby se to spoléhalo jen na
+   * provider config, nebylo by kam zapsat, že tenhle dotaz potřebuje jinak.
+   *
+   * PROČ JEN NA `prefer`, ne na celý řetěz: pole je poskytovatelské.
+   * Naměřeno 2026-10-05 — poslat `reasoning_effort` na OpenRouter vrátí
+   * `HTTP 400`, protože ho v kombinaci s `reasoning` nepřijímá. Kdyby přepsalo
+   * všechny poskytovatele, záchranný klíč by tak dostal `400` a nešlo by už
+   * nic použít.
    */
   providerExtraBody?: Record<string, unknown>;
 }): Promise<LlmResult> {
@@ -558,21 +567,32 @@ export async function llmComplete(opts: {
   for (const preferred of opts.prefer ?? []) attempts.push(preferred);
 
   const chain = providerOrder();
+  // Přepis těla platí jen pro poskytovatele, kterého si volající vybral v
+  // `prefer`. Viz dokumentace `providerExtraBody`.
+  const knobProviders = new Set((opts.prefer ?? []).map((entry) => entry.provider));
   const keyless = chain.filter((provider) => !providerKey(provider));
   for (const provider of keyless) failures.push(`${provider.id}: bez klíče`);
 
-  // Počet poskytovatelů, kteří se ještě pokusí. Společný rozpočet se mezi ně
-  // dělí, aby visící poskytovatel nesežral celý čas a řetěz se nedostal k záchrannému.
-  const usableChain = chain.filter((provider) => providerKey(provider));
+  // Poskytovatelé, kteří se opravdu pokusí. Denne vyčerpaní se do tohoto seznamu
+  // NEDOSTAŹÍ — a to je důležité pro dělení času níže.
+  //
+  // Naměřeno 2026-10-05: hlavní OpenRouter klíč má denní strop 0/50 a přeskakuje
+  // se za 0,3 s. Kdyby se ale počítal do počtu zbývajících poskytovatelů, NVIDIA
+  // by dostala jen třetinu rozpočtu (34 s), zatímco její odpověď na tento dotaz
+  // reálně trvá 41–44 s. Tím by se řetěz sám o sobě přivedl k tomu, aby ji
+  // usekl. Vyčerpaný poskytovatel nesmí brát podíl.
+  const usableChain = chain.filter(
+    (provider) => providerKey(provider) && !isExhausted(provider.id),
+  );
+  const skippedExhausted = chain.filter(
+    (provider) => providerKey(provider) && isExhausted(provider.id),
+  );
+  for (const provider of skippedExhausted) {
+    failures.push(`${provider.id}: denní limit vyčerpán (přeskočeno do resetu)`);
+  }
 
   for (let providerIndex = 0; providerIndex < usableChain.length; providerIndex += 1) {
     const provider = usableChain[providerIndex];
-    // DENNÍ strop z předchozího požadavku v tomto izolátu. Přeskočit je
-    // správné — reset je vypočitatelný, ne něco, co by se dalo přečkat.
-    if (isExhausted(provider.id)) {
-      failures.push(`${provider.id}: denní limit vyčerpán (přeskočeno do resetu)`);
-      continue;
-    }
     const preferred = attempts.filter((a) => a.provider === provider.id);
     const models = [...preferred.map((a) => a.model), ...provider.models.filter((m) => !preferred.some((p) => p.model === m))];
 
@@ -613,7 +633,9 @@ export async function llmComplete(opts: {
         maxTokens: opts.maxTokens,
         json,
         timeoutMs: Math.min(Math.min(timeoutMs, left), providerEnd - Date.now()),
-        providerExtraBody: opts.providerExtraBody,
+        providerExtraBody: knobProviders.has(provider.id)
+          ? opts.providerExtraBody
+          : undefined,
       });
       if (result.ok) return { text: result.text, provider: provider.id, model };
       keyedAttempts += 1;

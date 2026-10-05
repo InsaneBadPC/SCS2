@@ -42,10 +42,34 @@
 //
 //   ✗ „je toto DELŠÍ slovo vůbec české“. Bez slovníku se to nepozná a tvrdit
 //     to by byl podvod. Delší vymyšleniny proto občas projdou — hlavně v
-//     `assonance“, kde je to „téměř rým“ a uživatel si to posoudí sám.
+//     `assonance`, kde je to „téměř rým“ a uživatel si to posoudí sám.
 //     Proti tomu je třetí krok: `songcraft-rhymes` po neúspěchu dotaz
 //     ZOPAKUJE se striktnějším promptem, který výslovně zakazuje cizí jazyky
 //     a jmenuje konkrétní vyhozené tvary.
+//
+// ZDE VYTVZOROVANÁ MEZE — co přesně po opravách ještě zůstává
+// ---------------------------------------------------
+// Živý test 2026-10-05 po přidání kontrol CVC, CCV, nemožných dvojic písmen
+// (`jc`), samohlásky+koncovky a stropu na assonance. Ke „srdce“ (koncovka „ce“)
+// model vrací pořád toto:
+//
+//     exact: ["vřece", "přece", "zřece", "břece", "vzece", …]
+//
+// Z toho je správně jen `přece`. `vřece`, `zřece` a `vzece` jsou vymyšleniny.
+// ZKOUŠEL jsem je odchytit kontrolou počáteční souhláskové skupiny a to SELHALO
+// ve všech variantách:
+//
+//   - kontrola všech dvousouhláskových onsetsů odhazovala SKUTEČNÁ slova
+//     (`zpráva`, `zbraň`, `ztráta`, `šroub`, `srdce`) a `vřece` propustila,
+//   - zúžení na `vř` a `zř` s NEDIACRITIZOVANÝM porovnáním propouští `vřece`,
+//     protože po odhození diakritiky z `vř` zbude `vr`, a to je běžný onset
+//     (`vrata`, `vrba`),
+//   - zúžení na `vř` a `zř` S diakritikou odhazuje skutečné slovo `vřes`.
+//
+// Tvrzení „`vř` není český onset“ je tedy prokazatelně chybné. Raději je tohle
+// napsané a kontrola nepřidána, než aby v repu byla pravidla, která říkají
+// nesmysl. Zbývající mez je jednoznačná: BEZ SLOVNÍKU nelze poznat, že
+// `vřece` není slovo. Je to jediná zbylá vada a je popsáná tady, ne skrytá.
 //
 // PROČ TU NENÍ SEZNAM ANGLICKÝCH SLOV
 // ------------------------------------
@@ -224,12 +248,35 @@ const CZECH_CVC_SHORT = new Set([
   "lit", "mec", "mit", "moc", "noc", "pan", "pes", "prs", "pyt", "rys",
   "sen", "sin", "syp", "sev", "sip", "suk", "tys", "ves", "vul", "vys",
   "zub", "zal", "zar", "zil", "zen", "ok", "oko", "led", "ret", "stul", "host",
+  "noh", "pch", "vlk",
   // časté funkční a krátké tvary, které model vrací jako „rýmu“ k sobě samým
   "den", "ten", "jen", "ven", "nic", "vim", "uz",
   // ZAMYŠLENĚ NECHYBÍ „fen“ (diakriticky „fén“ = větrák). Po odhození
   // diakritiky by ale propadl i tvar „fen“, který český NENÍ — a právě „fen“
   // patřilo k vymyšleninám, které model vracel ke slovu „sen“. Radši chybějící
   // „fén“ než propuštěné „fen“.
+]);
+
+/**
+ * Česká tříznenná slova tvaru DVĚ souhlásky + samohláska (CCV).
+ *
+ * `isShortCvc` původně pokrýval jen CVC, ale živý test 2026-10-05 ukázal, že se
+ * model chybuje i na CCV: ke „sen“ vrátil assonance
+ * `["mle", "bole", "kre", "sně", "hle", "vě", "zne", "nje"]` — pět z osmi byl
+ * vymyšlené shluky. Tvar CCV má česká zásoba také malou a uzavřenou, takže se
+ * dá kontrolovat stejně jako CVC.
+ *
+ * Diakritika je zde VYLOČENĚ: „žď“ neexistuje, ale „džu“ (písmeno `ž` jako
+ * jedno znění) ano. Proto jsou v seznamu tvary psané NEDIACRITIZOVANĚ.
+ */
+const CZECH_CCV_SHORT = new Set([
+  "bzu", "dzu", "flu", "hlu", "hra", "hry", "chu", "jde", "kdo", "kdo",
+  "kra", "kri", "mlu", "mna", "noh", "plu", "pra", "pro", "sla", "slo",
+  "sra", "sro", "sta", "sto", "stu", "tla", "tka", "tra", "tro", "tru",
+  "noh", "pla", "plu", "sru",
+  "vla", "vlo", "vra", "vro", "zda", "zde", "zla", "zlo", "zmu",
+  // Funkční slovesa, která se v assonance objevují často: „zda“ nebylo v prvním
+  // živém výstupu, ale je to běžné české slovo a chybělo by jako poptávka.
 ]);
 
 /** Tříznenný tvar konsonant–samohláska–konsonant? */
@@ -239,9 +286,65 @@ function isShortCvc(folded: string): boolean {
   return !VOWELS.includes(first) && VOWELS.includes(vowel) && !VOWELS.includes(last);
 }
 
-/** České CVC, nebo aspoň ne tříznenné CVC — tedy nelze ho odmítnout tvarem. */
+/** Tříznenný tvar dvě souhlásky + samohláska? */
+function isShortCcv(folded: string): boolean {
+  if (folded.length !== 3) return false;
+  const [first, second, vowel] = folded;
+  return (
+    !VOWELS.includes(first) &&
+    !VOWELS.includes(second) &&
+    VOWELS.includes(vowel)
+  );
+}
+
+/**
+ * Je to jen samohláska plus coda koncovky? Tedy vymyšlenina, ne slovo.
+ *
+ * Živý nález 2026-10-05: ke „srdce“ (koncovka „ce“) model vrátil
+ * `exact: ["ace","ece","ice","oce","uce","áce","éce","íce","óce","úce"]` —
+ * deset položek, z nichž ANI JEDNA není české slovo. Všechny jsou tříznenné a
+ * začínají samohláskou, takže je kontrola CVC/CCV minula.
+ *
+ * Proč je to tak jisté: česká slabika NEMÁ samohláskový onset. Tříznenný tvar
+ * `X + coda`, kde X je samohláska, by tedy zněl jako dvě slabiky `X-coda` a
+ * musel by být dlouhý. „ace“ = /a.ˈt͡sɛ/ neexistuje, protože by to bylo slovo
+ * tvaru „a-ce“, kde „ce“ je celá druhá slabika — a v češtině žádný kořen takhle
+ * nevzniká.
+ *
+ * Kontrola je ZÚŽENÁ na přesný tvar, který byl naměřen: tří písmena, první
+ * samohláska, a POSLEDNÍ DVA znaky přesně koncovka dotazu. Skutečná česká slova
+ * tím nejsou dotčena — „oko“ má koncovku „ko“, „osa“ má „sa“ a na „a“ začínat
+ * nemusí, aby byla koncovka shodná s dotazem.
+ */
+function isTailFiller(value: string, queryTail: string): boolean {
+  const folded = foldWord(value);
+  if (folded.length !== 3 || queryTail.length !== 2) return false;
+  return VOWELS.includes(folded[0]) && folded.slice(1) === foldWord(queryTail);
+}
+
+/** České CVC/CCV, nebo aspoň ne tříznenný tvar — tedy nelze ho odmítnout tvarem. */
 function shortCvcIsAcceptable(folded: string): boolean {
-  return !isShortCvc(folded) || CZECH_CVC_SHORT.has(folded);
+  if (isShortCvc(folded)) return CZECH_CVC_SHORT.has(folded);
+  if (isShortCcv(folded)) return CZECH_CCV_SHORT.has(folded);
+  return true;
+}
+
+/**
+ * Dvojice písmen, které v češtině NEMŘÍ následovat za sebou v žádném tvaru.
+ *
+ * Česká slovní zásoba zná jen omezené onsety (za `j` smí následovat jen samohláska
+ * nebo `c`/`s`/`z`/`š`/`ž`/`ch`, proto `jc` neexistuje), ale na `q`/`x` jako
+ * samostatné písmena česká slova vůbec nemá. Toto je už lexikální poznání, ne
+ * tvarové — je to jediná výjimka z pravidla „bez slovníku se sloveso nepozná",
+ * a je záměrná: živý nález 2026-10-05 ke „srdce“ vrátil `dvojce`, které fonologicky
+ * sedí na `-ce`, ale obsahuje skupinu `jc`. Jedno pravidlo proti jednomu výskytu
+ * je levné a nemá riziko poptávky, protože `jc` se v češtině nevyskytuje vůbec.
+ */
+const IMPOSSIBLE_BIGRAMS = ["jc", "cj", "sj", "jj", "qx", "kq", "xc", "cq"];
+
+function hasImpossibleBigram(value: string): boolean {
+  const folded = foldWord(value);
+  return IMPOSSIBLE_BIGRAMS.some((pair) => folded.includes(pair));
 }
 
 /**
@@ -266,6 +369,22 @@ const MULTIWORD_MAX_WORDS = 3;
  * nechává variantu, ale zbytek odfiltruje.
  */
 const MULTIWORD_PER_LAST_WORD = 2;
+
+/**
+ * Kolik položek assonance smí sdílet stejnou poslední hláskovou dvojici.
+ *
+ * Naměřeno živě 2026-10-05 u „noc“: assonance vyšlo
+ * `moko, loko, boko, soko, toko, woko, zoko, joko` — osm položek, z nichž
+ * SKORO ŽÁDNÉ není české slovo. Všechny jsou totéž vymyšlený tvar s vyměněnou
+ * první hláskou. Bez této kontroly je to přesně to, co uživatel dostane.
+ *
+ * Dvojice se počítá z posledních DVOU znaků, ne z koncovky dotazu — to je
+ * záměrně jiná veličina. Skutečné české assonance to snese: u „srdce“ živě vyšlo
+ * `míru, tělo, věci, píseň, sníh, móda, více, květe` a jen „hnědo, červeno,
+ * zeleno“ sdílí „-do“. Ztrácí se tím jedna položka, ale získává se jistota, že
+ * zbytek uživateli nedá rodinu vymyšlenin.
+ */
+const ASSONANCE_PER_ENDING = 2;
 
 /**
  * Slovesa a ukazovací zájmena, kvůli kterým je skupina frází, ne rýmou.
@@ -305,6 +424,8 @@ export function guardRhymes(
   const seen = new Set<string>();
   /** Kolikrát už se objevilo dané poslední slovo skupinové rýmy. */
   const lastWordCount = new Map<string, number>();
+  /** Kolikrát už se objevila daná hlásková dvojice na konci assonance. */
+  const endingCount = new Map<string, number>();
 
   const reject = (value: string): void => {
     if (value.trim()) rejected.add(value.trim().slice(0, 60));
@@ -323,7 +444,11 @@ export function guardRhymes(
       if (excluded.has(folded)) continue;
       seen.add(key);
 
-      if (!folded || hasForeignCharacter(value)) {
+      if (!folded || hasForeignCharacter(value) || hasImpossibleBigram(value)) {
+        reject(value);
+        continue;
+      }
+      if (isTailFiller(value, queryTail)) {
         reject(value);
         continue;
       }
@@ -381,9 +506,31 @@ export function guardRhymes(
         lastWordCount.set(key, repeats + 1);
       }
 
-      // `assonance` je volný rým — jde o „téměř“, takže zvuková kontrola by
-      // byla příliš tvrdá a zahodila by i dobré návrhy. Kontrola cizích znaků
-      // ale platí pořád: anglické slovo je anglické slovo v jakékoli skupině.
+      // `assonance` je volný rým — jde o „téměř“, takže zvuková kontrola koncovky
+      // by byla příliš tvrdá a zahodila by i dobré návrhy. Kontrola tvaru se
+      // ale aplikuje stejně, protože nejhorší vymyšleniny jsou právě tříznenné.
+      // Naměřeno živě 2026-10-05 ke „sen“: assonance vyšlo
+      // ben, fen, gen, hen, ken, len, men, nen — osm vymyšlených tvarů, žádný
+      // český. Bez této kontroly je to přesně to, co uživatel dostane.
+      // Hledané slovo je v každé skupině chyba (naměřeno: k „srdce“ se vrátilo
+      // assonance ["srdce", …]).
+      if (folded === queryFolded) {
+        reject(value);
+        continue;
+      }
+      if (!shortCvcIsAcceptable(folded)) {
+        reject(value);
+        continue;
+      }
+      if (kind === "assonance") {
+        const ending = folded.slice(-2);
+        const repeats = endingCount.get(ending) ?? 0;
+        if (repeats >= ASSONANCE_PER_ENDING) {
+          reject(value);
+          continue;
+        }
+        endingCount.set(ending, repeats + 1);
+      }
       out.push(value);
       if (out.length >= limit) break;
     }

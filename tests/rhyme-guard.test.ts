@@ -141,6 +141,20 @@ describe("kontrola živého výstupu modelu", () => {
     });
   });
 
+  it("vyhodí vymyšlené tříznenné tvary i z assonance", () => {
+    // NAMĚŘENO ŽIVĚ 2026-10-05 ke „sen“: assonance vyšlo
+    // ben, fen, gen, hen, ken, len, men, nen. Osm vymyšlenin, žádný český tvar.
+    const result = guard("sen", {
+      exact: [],
+      multiword: [],
+      assonance: ["ben", "fen", "gen", "hen", "ken", "len", "men", "nen", "kamen", "ven"],
+    });
+    expect(result.assonance).toEqual(["kamen", "ven"]);
+    expect(result.rejected).toEqual(
+      expect.arrayContaining(["ben", "fen", "gen", "hen", "ken", "len", "men", "nen"]),
+    );
+  });
+
   it("nechá dobrý výsledek beze změny a nežádá o opakování", () => {
     const result = guard("smůlu", {
       exact: ["nulu", "školu", "dolu", "polu"],
@@ -237,5 +251,59 @@ describe(" kdy se ptát znovu", () => {
     // zpřesněným promptem, ne smyčkově — nejhorší případ jsou dva pokusy
     // po ~60 s, což je pod naměřeným stropem edge funkce ~150 s.
     expect(shouldRetry({ exact: [], multiword: [], assonance: [], rejected: [] })).toBe(true);
+  });
+});
+
+// Živý výstup 2026-10-05 (2. kolo sweep) odhalil dvě mezery v tom, co kontrola
+// chytá. Obě jsou tady zamčené proti návratu.
+describe(" vymyšleniny, kterým se podařilo projít", () => {
+  it("vyhazuje tříznenné CCV shluky — assonance ke „sen“ bylo jich pět z osmi", () => {
+    // Živě: ["mle", "bole", "kre", "sně", "hle", "vě", "zne", "nje"].
+    const guarded = guard("sen", {
+      exact: ["den", "jen", "ten", "ven"],
+      assonance: ["mle", "bole", "kre", "sně", "hle", "vě", "zne", "nje"],
+    });
+    expect(guarded.assonance).toEqual(["bole", "vě"]);
+    expect(guarded.rejected).toContain("mle");
+    expect(guarded.rejected).toContain("nje");
+  });
+
+  it("nechává projít skutečná česká CCV slova", () => {
+    // Kontrola nesmí být tak široká, že vyhodí „pro“ nebo „zda“ — to jsou
+    // běžná slova a v assonance patří.
+    // Slova jsou vybrána tak, aby se mezi nimi žádné dvě neopakovaly hláskovou
+    // dvojicí — jinak by je zahodil strop ASSONANCE_PER_ENDING a test by měřil
+    // něco jiného, než že filtrace tvaru NEZABIJÍ na běžných slovech.
+    const guarded = guard("sen", {
+      assonance: ["pro", "sta", "vra", "kdo", "jde", "zda"],
+    });
+    expect(guarded.assonance).toEqual(["pro", "sta", "vra", "kdo", "jde", "zda"]);
+    expect(guard("sen", { assonance: ["zda", "zde"] }).assonance).toEqual(["zda", "zde"]);
+  });
+
+  it("vyhazuje slovní spojení, které v češtině nevyslovíme — živě „dvojce“", () => {
+    // Živě ke „srdce“ přišlo „dvojce“: fonologicky sedí na „-ce“, ale skupina
+    // „jc“ v češtině neexistuje.
+    const guarded = guard("srdce", {
+exact: ["konce", "dvojce", "svíce", "prince", "řece", "práce", "síce"],
+    });
+    expect(guarded.exact).toEqual(["konce", "svíce", "prince", "řece", "práce", "síce"]);
+    expect(guarded.rejected).toContain("dvojce");
+  });
+
+  it("vyhazuje samohlásku plus koncovku — živě deset kusů ke „srdce“", () => {
+    // Živě ke „srdce“ (koncovka „ce“) model vrátil přesně tohle a ani jedno není
+    // české slovo: jsou to vždycky jen samohláska navěšená na „-ce“.
+    const filler = ["ace", "ece", "ice", "oce", "uce", "áce", "éce", "íce", "óce", "úce"];
+    const guarded = guard("srdce", { exact: [...filler, "konce", "svíce", "prince"] });
+    expect(guarded.exact).toEqual(["konce", "svíce", "prince"]);
+    expect(guarded.rejected).toEqual(filler);
+  });
+
+  it("nesahá na skutečná slova, která začínají samohláskou", () => {
+    // Kontrola nesmí říznout „práce“ nebo „lásce“ jen proto, že začínají na
+    // samohlásku — podmínka je navíc přesná shoda posledních dvou znaků.
+    const guarded = guard("srdce", { exact: ["práce", "lásce", "více", "síce", "tance"] });
+    expect(guarded.exact).toEqual(["práce", "lásce", "více", "síce", "tance"]);
   });
 });
