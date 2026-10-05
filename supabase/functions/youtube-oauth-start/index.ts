@@ -29,7 +29,16 @@ Deno.serve(async (request) => {
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
   const clientId = Deno.env.get("YOUTUBE_CLIENT_ID");
   const redirectUri = Deno.env.get("YOUTUBE_REDIRECT_URI");
-  if (!url || !anonKey || !serviceKey || !clientId || !redirectUri) return json({ error: "YouTube OAuth není nakonfigurováno." }, 503);
+  // Pořadí je záměrné: YouTube hodnoty jsou jediné, které musí majitel projektu
+  // doplnit ručně v Google Cloud Console, takže v chybě musí být vidět první.
+  const missing = [
+    ["YOUTUBE_CLIENT_ID", clientId],
+    ["YOUTUBE_REDIRECT_URI", redirectUri],
+    ["SUPABASE_URL / SONGCRAFT_SUPABASE_URL", url],
+    ["SUPABASE_ANON_KEY / SONGCRAFT_SUPABASE_ANON_KEY", anonKey],
+    ["SUPABASE_SERVICE_ROLE_KEY / SONGCRAFT_SERVICE_ROLE_KEY", serviceKey],
+  ].filter((entry) => !entry[1]).map(([name]) => name as string);
+  if (missing.length) return json({ error: `YouTube OAuth není nakonfigurované. Chybí na Supabase: ${missing.join(", ")}.`, missing }, 503);
   if (!authorization) return json({ error: "Chybí přihlášení." }, 401);
 
   const auth = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });

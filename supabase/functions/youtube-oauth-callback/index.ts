@@ -7,7 +7,12 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
-const appRedirect = Deno.env.get("SONGCRAFT_APP_REDIRECT_URL") || "songcraftstudio://settings/youtube";
+// Výchozí hodnota MUSÍ být existující routa. `songcraftstudio://settings/youtube`
+// se v expo-routeru parsuje jako cesta `settings/youtube` a skončí na `+not-found`,
+// takže po návratu z Google by aplikace ukázala chybu. `songcraftstudio://settings`
+// (scheme z `app.config.ts`) odpovídá routě `/settings` a je stejná hodnota jako
+// výchozí `YOUTUBE_OAUTH_REDIRECT_URL` v `lib/youtube-oauth.ts`.
+const appRedirect = Deno.env.get("SONGCRAFT_APP_REDIRECT_URL") || "songcraftstudio://settings";
 
 function redirect(status: string, extra: Record<string, string> = {}) {
   const url = new URL(appRedirect);

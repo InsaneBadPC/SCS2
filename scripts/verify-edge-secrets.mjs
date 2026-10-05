@@ -72,7 +72,7 @@ const IMPACT = {
   YOUTUBE_REDIRECT_URI:
     'YouTube OAuth redirect URI — bez něj youtube-oauth-start nevygeneruje platnou autorizační URL',
   SONGCRAFT_APP_REDIRECT_URL:
-    'deep-link aplikace pro návrat z YouTube OAuth — bez něj youtube-oauth-callback použije výchozí songcraftstudio://settings/youtube',
+    'deep-link aplikace pro návrat z YouTube OAuth — bez ní youtube-oauth-callback použije výchozí songcraftstudio://settings',
   GOOGLE_AI_STUDIO_KEY:
     'Gemini API klíč — bez něj songcraft-copywriter, songcraft-rhymes a songcraft-studio-assistant vrací 503 a agent-orchestrator vypne gemini providera; AI cesta je postponed, ostatní funkce deployují bez něj',
   SYNC_STATS_CRON_SECRET:

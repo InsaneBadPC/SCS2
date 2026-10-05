@@ -57,7 +57,11 @@ Deno.serve(async (request) => {
   }
 
   if (input.action === "create") {
-    const formatInstruction = youtubeCover ? "Create a cinematic square music visual with a strong centered subject; the app will turn it into a wide 16:9 YouTube cover and add a title." : isAlbum ? "Create a square music album cover with strong artistic identity for the release." : "Create a square album cover.";
+    // ŽÁDNÝ renderer textu v repu není: žádný sharp/canvas/ImageMagick, žádný
+    // drawtext. `scripts/render/compose-cover.mjs` je záměrně mrtvý stub.
+    // Proto do promptu nesmí přijít nic, co by AI zveřejňovalo jako slib, že
+    // "app přidá titulek" — a "no lettering" musí zůstat poslední.
+    const formatInstruction = youtubeCover ? "Create a square cinematic music visual with a strong centered subject, so it can be cropped to a wide 16:9 frame without losing the subject. Leave clean space in the middle. Do not draw any text: the app never types anything into the image." : isAlbum ? "Create a square music album cover with strong artistic identity for the release." : "Create a square album cover.";
     const subjectLine = isAlbum
       ? `Czech music album by Temney. Album title: "${entityTitle}". Creative direction: ${truncate(stylePrompt, 600) || "instrumental collection without lyrics"}. Optional creative direction: ${truncate(input.userNote, 600) || "none"}.`
       : `Czech song by Temney. Song title: "${entityTitle}". Album: "${truncate(albumName, 120)}". Mood and music direction: ${truncate(stylePrompt, 600) || "original Czech song"}. Lyrical atmosphere: ${truncate(lyrics, 1200)}. Optional creative direction: ${truncate(input.userNote, 600) || "none"}.`;
@@ -121,7 +125,9 @@ Deno.serve(async (request) => {
     const { error: rawUploadError } = await supabase.storage.from("songcraft").upload(rawPath, imageBytes, { contentType: imageMime, upsert: false });
     if (rawUploadError) return json({ status: "failed", error: rawUploadError.message });
     await admin.from("sc_cover_jobs").upsert({ id: input.jobId, user_id: user.id, entity_type: input.entityType, entity_id: input.entityId, title: entityTitle, album_name: albumName, status: "completed", cover_path: rawPath, error: "16:9 composer pending; private source stored for safe crop.", updated_at: new Date().toISOString() });
-    return json({ status: "completed", coverPath: rawPath, message: "Soukromý zdrojový obal je uložený; zobrazí se bezpečným oříznutím." });
+    // Široký 16:9 obal se skutečně NEskládá a `cover_path` se nepřepisuje —
+    // klient tenhle obraz zahazuje. Zpráva to nesmí zapírat.
+    return json({ status: "completed", coverPath: rawPath, message: "Soukromý zdrojový obrázek uložený. Široký 16:9 obal se zatím neskládá, takže obrázek skladby se nezmění." });
   }
 
   return json({ error: "Neznámá akce." }, 400);
