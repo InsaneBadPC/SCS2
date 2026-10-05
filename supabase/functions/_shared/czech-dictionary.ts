@@ -256997,7 +256997,7 @@ export function czechWordSet(): Set<string> {
  * cs-CZ, diakritika Zachována (viz header — složený index koliduje).
  */
 export function isCzechWord(token: string): boolean {
-  const normalized = token.trim().toLowerCase("cs-CZ");
+  const normalized = token.trim().toLocaleLowerCase("cs-CZ");
   if (!normalized) return false;
   return czechWordSet().has(normalized);
 }
