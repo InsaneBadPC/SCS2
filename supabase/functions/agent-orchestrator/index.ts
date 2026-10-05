@@ -7,6 +7,7 @@ import {
   isAllowedPrivateUser,
   privateAccessMessage,
 } from "../_shared/access.ts";
+import { llmComplete } from "../_shared/llm.ts";
 import { describeRecipe, planMotion, visionProvider } from "./motion-recipe.ts";
 
 const cors = {
@@ -41,8 +42,17 @@ type LlmCall = {
   id?: string;
   name: string;
   args: Record<string, unknown>;
+  /**
+   * Volitelné. Gemini ho posílá zpátky u `functionCall` a pro vícetakové
+   * přemýšlení ho chce — ale OpenAI cizí pole v `messages` odmítá (llm-map §8.5),
+   * proto se NIKDY neposílá do zprávy. Kdyby ho někdo přidal do `LlmPart`,
+   * `toOpenAIMessages` by ho zahodil; drží se tu jen proto, aby se nerozbil
+   * pars, když ho nějaký provider vrátí.
+   */
   thoughtSignature?: string;
 };
+// Vnitřní tvar zprávy. `thoughtSignature` je VŽDY volitelné a nikdy se
+// nepřenáší dál — `toOpenAIMessages` ho nezná a OpenAI by ho odmítl (llm-map §8.5).
 type LlmPart = { type: "text"; text: string } | {
   type: "functionCall";
   name: string;
@@ -68,6 +78,19 @@ type ProviderCfg = {
   keyEnvs: string[];
   base: string;
   models: string[];
+  /** Doplňkové tělo požadavku (`reasoning_effort` na NVIDIA, `reasoning` na OpenRouter). */
+  extraBody?: Record<string, unknown>;
+  /**
+   * Kolik tokenů potřebuje reasoning VEDLE odpovědi. Bez rezervy reasoning
+   * vytlačí odpověď a provider vrátí `content: null` + `finish_reason:"length"`
+   * (naměřeno živě, viz `openaiCompatibleChat`).
+   */
+  reasoningCost: number;
+  /**
+   * Modely, co umí `image_url`. Prázdné = tato větev neumí vidět a nesmí
+   * se použít pro plán pohybu. Změřeno, ne odhadnuto — viz `motion-recipe.ts`.
+   */
+  visionModels?: string[];
   chat: (
     key: string,
     base: string,
@@ -76,6 +99,7 @@ type ProviderCfg = {
     msgs: LlmMessage[],
     toolDefs: unknown[],
     withTools: boolean,
+    opts: { maxTokens: number; reasoningCost: number; extraBody?: Record<string, unknown> },
   ) => Promise<LlmResult>;
 };
 
@@ -372,6 +396,7 @@ async function ask(
     msgs,
     toolDefs,
     withTools,
+    { maxTokens: AGENT_MAX_TOKENS, reasoningCost: provider.reasoningCost, extraBody: provider.extraBody },
   ).catch((error) => {
     throw new Error(
       `${provider.id}:${model} ${
@@ -380,6 +405,29 @@ async function ask(
     );
   });
 }
+/**
+ * MIME podle MAGICKÝCH BAJTŮ, ne podle přípony v cestě. Přípona lže —
+ * viz `make_music_video`. `null` = neznámý/neobrázek.
+ */
+export function sniffImageMime(bytes: Uint8Array): string | null {
+  if (bytes.length < 12) return null;
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e &&
+    bytes[3] === 0x47) return "image/png";
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // GIF: "GIF87a" / "GIF89a"
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+    bytes[3] === 0x38) return "image/gif";
+  // WebP: "RIFF" .... "WEBP"
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+    bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 &&
+    bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
+  return null;
+}
+
 function toBase64(bytes: Uint8Array): string {
   let bin = "";
   const chunk = 0x8000;
@@ -388,45 +436,146 @@ function toBase64(bytes: Uint8Array): string {
   }
   return btoa(bin);
 }
+/**
+ * Všechny klíče, které čte řetěz. DŘÍV tady byly JEN dvě Gemini proměnné, takže
+ * `visionProvider()` nemohla vidět `OPENROUTER_API_KEY` ani `NVIDIA_API_KEY` —
+ * tvrdá zátka pro `make_music_video`/`make_short` (llm-map §4, §8.10).
+ * Teď se to odvozuje z `PROVIDERS`, takže se to nemůže rozejít.
+ */
 function envKeys(): Record<string, string | undefined> {
-  return {
-    GOOGLE_AI_STUDIO_KEY: Deno.env.get("GOOGLE_AI_STUDIO_KEY"),
-    GEMINI_API_KEY: Deno.env.get("GEMINI_API_KEY"),
-  };
+  const out: Record<string, string | undefined> = {};
+  for (const provider of PROVIDERS) {
+    for (const name of provider.keyEnvs) out[name] = Deno.env.get(name);
+  }
+  // Záchrana Gemini mimo tool řetězec drží sdílený klient (viz `llmText`).
+  for (const name of ["GOOGLE_AI_STUDIO_KEY", "GEMINI_API_KEY"]) {
+    out[name] = Deno.env.get(name);
+  }
+  return out;
 }
 
+/**
+ * Rozpočet ODPOVĚDI na jeden krok agenta. Reasoning si bere navíc
+ * (`reasoningCost`), jinak u reasoning modelů vytlačí odpověď — naměřeno
+ * živě: `max_tokens: 24` → `finish_reason:"length"`, `content: null`,
+ * `reasoning_tokens: 24`; totéž s `max_tokens: 900` → normální česká odpověď.
+ */
+const AGENT_MAX_TOKENS = 1400;
+
+/**
+ * Časový rozpočet CELÉHO LLM řetězce na jeden krok agenta.
+ *
+ * Edge funkce má wall-clock limit (naměřeno: `HTTP 546 WORKER_RESOURCE_LIMIT`
+ * po ~150 s). Původně tady timeout 90 s byl NA POKUS a pokusů mohlo být
+ * 3 modely × 3 poskytovatele = devět → v teoretickém horším případě 13 minut.
+ * Rozpočet je teď společný: 45 s na celý řetěz. NVIDIA (první v pořadí,
+ * žádný denní strop) odpovídá za 1–3 s, takže 45 s je velká rezerva, ne
+ * zkrácení. A je to JEDEN krok — pořád je 6 kroků agenta.
+ */
+const CHAIN_TIMEOUT_MS = 45_000;
+
+/** Mez base64 náplně pro vidění. 6 MB bajtů ≈ 8 MB base64 ≈ 8.4 MB JSON. */
+const MAX_B64_VISION = 6 * 1024 * 1024;
+
 // Provideri jsou na uroven modulu, protoze je potrebuje i planMotion (vision).
+//
+// POŘADÍ NENÍ LIBOVOLNÉ. Změřeno 2026-10-05 na živých klíčích:
+//
+//   OpenRouter `:free`  → `x-ratelimit-limit: 50`, a to 50 POŽADAVKŮ NA DEN
+//                         NAPŘIČ VŠEMI `:free` MODELY DOHROMADY, reset 00:00 UTC.
+//                         Ne „limit na model“. Živě: `remaining: 0`.
+//   NVIDIA NIM          → žádný denní strop, drží `reasoning` přes `reasoning_effort`.
+//                         Tool calling ověřen živě (viz report): `finish_reason:
+//                         "tool_calls"` + `tool_calls[].function.arguments`.
+//
+// Proto NVIDIA první. OpenRouter zůstává druhý (je to levná pojistka pro případ,
+// že NVIDIA spadne), ale v době vyčerpaných 50/50 je to jen rychlý 429, který
+// se přeskočí. `SONGCRAFT_LLM_PROVIDERS` přepíše pořadí i v tomto souboru.
+//
+// `gemini` v tool řetězci NENÍ a to je záměr: `geminiChat()` (Gemini-native
+// `functionDeclarations`) je pryč a nahrazuje ho sdílený klient, který neumí
+// nástroje. Pro text Gemini zůstává dostupný — `llmText()` ho volá přes
+// `_shared/llm.ts`, kde je poslední v záchranném řetězci a jen když existuje klíč.
 const PROVIDERS: ProviderCfg[] = [
   {
-    id: "gemini",
-    keyEnvs: ["GOOGLE_AI_STUDIO_KEY", "GEMINI_API_KEY"],
-    base: "https://generativelanguage.googleapis.com/v1beta",
+    id: "nvidia",
+    keyEnvs: ["NVIDIA_API_KEY", "NVAPI_API_KEY"],
+    base: "https://integrate.api.nvidia.com/v1",
     models: [
-      "gemini-3.1-flash-lite",
-      "gemini-2.5-flash-lite",
-      "gemini-flash-lite-latest",
+      "nvidia/nemotron-3-super-120b-a12b",
+      "nvidia/nemotron-3-ultra-550b-a55b",
+      "openai/gpt-oss-20b",
     ],
-    chat: geminiChat,
+    // NVIDIA `reasoning: {max_tokens}` IGNORUJE (naměřeno — reasoning sežere
+    // celý `max_tokens` a vrátí se `content: null`). Její vlastní knoflík je
+    // `reasoning_effort`, který reasoning tokeny opravdu zkracuje.
+    extraBody: { reasoning_effort: "low" },
+    reasoningCost: 640,
+    // ZMĚŘENO na obrázku 128×128 a na 160×160 „noční ulička" (viz
+    // `motion-recipe.ts`): všechny tři vrátily 200 + použitelný recept.
+    // `microsoft/phi-3-vision-128k-instruct` je vyškrtnut — na tomhle účtě 404.
+    // Pořadí od nejlepšího: nano-omni je ~3x rychlejší a dává těsnější region
+    // než 90b, který občas vrátí region přes celý snímek.
+    visionModels: [
+      "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "meta/llama-3.2-90b-vision-instruct",
+      "meta/llama-3.2-11b-vision-instruct",
+    ],
+    chat: openaiCompatibleChat,
   },
   {
     id: "openrouter",
-    keyEnvs: ["OPENROUTER_API_KEY"],
+    keyEnvs: ["OPENROUTER_API_KEY", "SONGCRAFT_OPENROUTER_API_KEY"],
     base: "https://openrouter.ai/api/v1",
     models: [
-      "google/gemini-3.1-flash-lite",
-      "google/gemini-3.5-flash-lite",
-      "deepseek/deepseek-v4.1-flash",
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "google/gemma-4-31b-it:free",
+      "google/gemma-4-26b-a4b-it:free",
+      "qwen/qwen3.8-27b:free",
+      "liquid/lfm-2.5-2.6b:free",
     ],
+    // Tady `reasoning: {max_tokens}` funguje a je to JEDINÝ způsob, jak se
+    // vyhnout `content: null` — bez stropu většina bezplatných modelů vrátí
+    // 200 + `finish_reason:"length"` + prázdný text.
+    extraBody: { reasoning: { max_tokens: 1024 } },
+    reasoningCost: 1024,
+    visionModels: ["nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"],
     chat: openaiCompatibleChat,
   },
   {
-    id: "deepseek",
-    keyEnvs: ["DEEPSEEK_API_KEY"],
-    base: "https://api.deepseek.com",
-    models: ["deepseek-chat", "deepseek-flash"],
+    // Druhý klíč = poslední záchrana. Je 429-throttled jinak, takže obvykle
+    // ještě něco vrátí, když hlavní klíč spadl.
+    id: "openrouter-backup",
+    keyEnvs: ["OPENROUTER_API_KEY_BACKUP", "SONGCRAFT_OPENROUTER_API_KEY_BACKUP"],
+    base: "https://openrouter.ai/api/v1",
+    models: [
+      "nvidia/nemotron-3-super-120b-a12b:free",
+      "google/gemma-4-31b-it:free",
+    ],
+    extraBody: { reasoning: { max_tokens: 1024 } },
+    reasoningCost: 1024,
     chat: openaiCompatibleChat,
   },
 ];
+
+/**
+ * Text bez nástrojů jde přes SDÍLENÝ klient (`_shared/llm.ts`), ne přes
+ * lokální `PROVIDERS`. Důvod: jen sdílený klient umí Gemini, a to jako poslední
+ * záchradu, když existuje klíč. Duplikovat Gemini tělo sem znovu by vrátilo
+ * přesně to, co `_shared/llm.ts` vznikl zrušit.
+ */
+async function llmText(system: string, msgs: LlmMessage[]): Promise<LlmResult> {
+  const messages = msgs.flatMap((msg) =>
+    msg.role === "function" ? [] : toOpenAIMessages(msg)
+  ).filter((entry) => typeof entry.content === "string" && entry.content);
+  const out = await llmComplete({
+    system,
+    messages: messages as Array<{ role: "user"; content: string }>,
+    temperature: 0.55,
+    maxTokens: AGENT_MAX_TOKENS,
+  });
+  return { text: out.text, calls: [], provider: out.provider, model: out.model };
+}
 
 async function llm(
   system: string,
@@ -434,7 +583,14 @@ async function llm(
   toolDefs: unknown[],
   withTools = true,
 ): Promise<LlmResult> {
+  // Bez nástrojů jde odpověď přes sdílený klient — ten má v řetězci i Gemini.
+  if (!withTools) return await llmText(system, msgs);
+
   const failures: string[] = [];
+  // Rozpočet je pro CELÝ řetěz, ne pro jeden pokus. Bez toho je to devět pokusů
+  // po 90 s = 13 minut visící požadavek, což je přesně to, co ty tři funkce
+  // bez timeoutu dělaly (a dělaly špatně).
+  const deadline = Date.now() + CHAIN_TIMEOUT_MS;
   for (const provider of PROVIDERS) {
     const key = provider.keyEnvs.map((entry) => Deno.env.get(entry)).find(
       Boolean,
@@ -444,6 +600,10 @@ async function llm(
       continue;
     }
     for (const model of provider.models) {
+      if (deadline - Date.now() <= 2_000) {
+        failures.push(`${provider.id}:${model}: vypršel společný časový limit`);
+        break;
+      }
       try {
         const result = await ask(
           provider,
@@ -463,65 +623,6 @@ async function llm(
   throw new Error(`Všichni LLM poskytovatelé selhali. ${failures.join(" | ")}`);
 }
 
-async function geminiChat(
-  key: string,
-  base: string,
-  model: string,
-  system: string,
-  msgs: LlmMessage[],
-  toolDefs: unknown[],
-  withTools: boolean,
-): Promise<LlmResult> {
-  const contents = jsonifyGemini(msgs);
-  const response = await fetch(
-    `${base}/models/${encodeURIComponent(model)}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents,
-        tools: withTools ? [{ functionDeclarations: toolDefs }] : undefined,
-        generationConfig: { temperature: 0.55, maxOutputTokens: 1200 },
-      }),
-      signal: AbortSignal.timeout(90_000),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} ${(await response.text()).slice(0, 160)}`,
-    );
-  }
-  const data = await response.json() as {
-    candidates?: Array<
-      {
-        content?: {
-          parts?: Array<
-            {
-              text?: string;
-              thoughtSignature?: string;
-              functionCall?: { name?: string; args?: Record<string, unknown> };
-            }
-          >;
-        };
-      }
-    >;
-  };
-  const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const text = parts.map((part) => part.text ?? "").join("\n").trim();
-  const calls = parts.filter((
-    part,
-  ): part is {
-    text?: string;
-    thoughtSignature?: string;
-    functionCall?: { name?: string; args?: Record<string, unknown> };
-  } => Boolean(part.functionCall)).map((part) => ({
-    name: part.functionCall?.name ?? "",
-    args: part.functionCall?.args ?? {},
-    thoughtSignature: part.thoughtSignature ?? "",
-  }));
-  return { text, calls, provider: "gemini", model };
-}
 async function openaiCompatibleChat(
   key: string,
   base: string,
@@ -530,6 +631,7 @@ async function openaiCompatibleChat(
   msgs: LlmMessage[],
   toolDefs: unknown[],
   withTools: boolean,
+  opts: { maxTokens: number; reasoningCost: number; extraBody?: Record<string, unknown> },
 ): Promise<LlmResult> {
   const messages: Array<Record<string, unknown>> = [{
     role: "system",
@@ -548,39 +650,28 @@ async function openaiCompatibleChat(
       },
     }))
     : undefined;
-  const response = await fetch(`${base}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      tools,
-      temperature: 0.55,
-      max_tokens: 1200,
-    }),
-    signal: AbortSignal.timeout(90_000),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} ${(await response.text()).slice(0, 160)}`,
-    );
+
+  // `maxTokens` je rozpočet ODPOVĚDI. Reasoning si bere navíc, jinak u
+  // reasoning modelů vytlačí odpověď a vrátí se `content: null`.
+  const budget = Math.max(256, opts.maxTokens + opts.reasoningCost);
+  let parsed = await postChat(base, key, model, messages, tools, budget, opts.extraBody);
+  let finish = parsed.finish;
+  let message = parsed.message;
+
+  // `content: null` + `finish_reason:"length"` = reasoning sežral rozpočet.
+  // Naměřeno živě: `max_tokens: 24` → `reasoning_tokens: 24`, `content: null`.
+  // Bez tohoto by uživatel dostal po 90 s „AI manažer selhal". Bereme to jako
+  // selhání POKUSU (ne jako prázdnou odpověď) a zkusíme to s dvojnásobným
+  // rozpočtem. JEDEN retry — ne smyčka, která by jen žrala čas.
+  if (
+    !message.content && !message.tool_calls?.length && finish === "length" &&
+    budget < 4_000
+  ) {
+    parsed = await postChat(base, key, model, messages, tools, budget * 2, opts.extraBody);
+    finish = parsed.finish;
+    message = parsed.message;
   }
-  const data = await response.json() as {
-    choices?: Array<
-      {
-        message?: {
-          content?: string | null;
-          tool_calls?: Array<
-            { id?: string; function?: { name?: string; arguments?: string } }
-          >;
-        };
-      }
-    >;
-  };
-  const message = data.choices?.[0]?.message ?? {};
+
   const text = (message.content ?? "").trim();
   const calls = (message.tool_calls ?? []).map((call) => {
     try {
@@ -596,30 +687,82 @@ async function openaiCompatibleChat(
       return { id: call.id, name: call.function?.name ?? "", args: {} };
     }
   });
+  // Ani text, ani nástroj = prázdný pokus. Musí to být CHYBA, jinak by řetěz
+  // skončil na prázdném výsledku a uživatel by dostal „zpracoval jsem úkol"
+  // bez odpovědi. `content: null` + `finish_reason:"tool_calls"` NENÍ chyba —
+  // to je běžný tvar volajícího nástroj (naměřeno živě na NVIDIA).
+  if (!text && !calls.length) {
+    throw new Error(
+      `bez odpovědi (finish=${finish}${
+        text === "" ? ", prázdný content" : ""
+      })`,
+    );
+  }
   return { text, calls, provider: "openai-compatible", model };
 }
-function jsonifyGemini(msgs: LlmMessage[]) {
-  return msgs.map((msg) => {
-    const parts = msg.parts.map((part) => {
-      if (part.type === "text") return { text: part.text };
-      if (part.type === "functionCall") {
-        return {
-          functionCall: { name: part.name, args: part.args },
-          ...(part.thoughtSignature
-            ? { thoughtSignature: part.thoughtSignature }
-            : {}),
-        };
-      }
-      return {
-        functionResponse: { name: part.name, response: part.response },
-        ...(part.thoughtSignature
-          ? { thoughtSignature: part.thoughtSignature }
-          : {}),
-      };
-    });
-    return { role: msg.role === "function" ? "user" : msg.role, parts };
+
+type OpenAiMessage = {
+  content?: string | null;
+  tool_calls?: Array<
+    { id?: string; function?: { name?: string; arguments?: string } }
+  >;
+};
+
+/** Jeden HTTP pokus na `/chat/completions` s timeoutem a bez házení na text. */
+async function postChat(
+  base: string,
+  key: string,
+  model: string,
+  messages: Array<Record<string, unknown>>,
+  tools: unknown,
+  maxTokens: number,
+  extraBody?: Record<string, unknown>,
+): Promise<{ message: OpenAiMessage; finish: string }> {
+  const response = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools,
+      temperature: 0.55,
+      max_tokens: maxTokens,
+      ...(extraBody ?? {}),
+    }),
+    signal: AbortSignal.timeout(CHAIN_TIMEOUT_MS),
   });
+  if (!response.ok) {
+    throw new Error(
+      `HTTP ${response.status} ${(await response.text()).slice(0, 160)}`,
+    );
+  }
+  const data = await response.json() as {
+    choices?: Array<
+      { finish_reason?: unknown; message?: OpenAiMessage }
+    >;
+  };
+  const choice = data.choices?.[0];
+  return {
+    message: choice?.message ?? {},
+    finish: typeof choice?.finish_reason === "string"
+      ? choice.finish_reason
+      : "neznámé",
+  };
 }
+
+/**
+ * Gemini-native `contents[].parts[]` + `functionDeclarations`/`functionResponse`
+ * je pryč: `geminiChat()` a `jsonifyGemini()` měly dvě Gemini-only těla
+ * duplikovaná přes čtyři edge funkce a `_shared/llm.ts` existuje právě proto,
+ * aby je nebylo potřeba. Kdo potřebuje Gemini, jde přes `llmText()`.
+ *
+ * `thoughtSignature` se odtud posílat NESMÍ — OpenAI cizí pole v `messages`
+ * odmítá (llm-map §8.5) a Gemini ho vyžaduje jen pro vícetakové přemýšlení,
+ * které v tomhle řetězci není. Zůstává proto nepovinný jen v `LlmCall`.
+ */
 function toOpenAIMessages(msg: LlmMessage): Array<Record<string, unknown>> {
   if (msg.role === "user") return [{ role: "user", content: textOf(msg) }];
   if (msg.role === "function") {
@@ -1214,26 +1357,44 @@ async function dispatch(
     }
     const bytes = new Uint8Array(await art.data.arrayBuffer());
     if (!bytes.byteLength) throw new Error("Obal je prázdný.");
-    if (bytes.byteLength > 6 * 1024 * 1024) {
-      throw new Error("Obal je moc velký pro vision analýzu (max 6 MB).");
+    // MIME SE ČTE Z HLAVIČEK, NE Z PŘÍPONY. Změřeno živě na datech Temneyho:
+    // `…/covers/1790710855990-12338.png` má 476 KB a magic hlavičku
+    // `FF D8 FF E0` = JPEG. Dřív se podle `.png` posílalo `image/png` s JPEG
+    // bajty, což je lež, kterou vision endpoint nemusí odpustit.
+    const mime = sniffImageMime(bytes);
+    if (!mime) {
+      throw new Error(
+        "Obal není obrázek, který se dá poslat do vision analýzy (PNG, JPEG, WebP nebo GIF).",
+      );
     }
-    const mime = song.cover_path.toLowerCase().endsWith(".png")
-      ? "image/png"
-      : song.cover_path.toLowerCase().endsWith(".webp")
-      ? "image/webp"
-      : "image/jpeg";
     const b64 = toBase64(bytes);
+    // Data URL jde do JSON těla, takže se počítá base64 délka, ne bajty:
+    // base64 je 4/3 větší a JSON tělo posíláme v jednom kusu.
+    if (b64.length > MAX_B64_VISION) {
+      throw new Error(
+        "Obal je moc velký pro vision analýzu (max 6 MB).",
+      );
+    }
 
     const vp = visionProvider(PROVIDERS, envKeys());
     if (!vp) {
+      // PŘESNOST ZPRÁVY: dřív tady bylo „Bez GOOGLE_AI_STUDIO_KEY nelze…", což
+      // bylo věcně špatně — klíč mohl být a stejně to nepomohlo, protože
+      // `envKeys()` četl JEN dvě Gemini proměnné (llm-map §4, §8.10). Tady už
+      // hledáme libovolného poskytovatele s VIDĚCÍM modelem, takže zpráva musí
+      // říct pravdu: žádný vidoucí model není nakonfigurovaný.
       throw new Error(
-        "Bez GOOGLE_AI_STUDIO_KEY nelze napsat plán pohybu, protože agent potřebuje vidět obrázek.",
+        "Plán pohybu teď nejde napsat: v AI řetězci není žádný vidoucí model, "
+          + "který by uměl vidět tenhle obal. Je potřeba klíč k poskytovateli "
+          + "s vision modelem (NVIDIA / OpenRouter). Bez něj radši nehádám, co "
+          + "se má hýbat — použij make_long_video nebo make_short_video, ty "
+          + "vidění nepotřebují.",
       );
     }
     const planned = await planMotion({
       key: vp.key,
       base: vp.base,
-      model: vp.model,
+      models: vp.models,
       imageBase64: b64,
       mimeType: mime,
       prompt: motionPrompt ||
@@ -1247,7 +1408,7 @@ async function dispatch(
         userId,
         name,
         "error",
-        { motionPrompt, reason: planned.reason },
+        { motionPrompt, reason: planned.reason, model: planned.model },
         song.id,
         planned.reason,
       );
@@ -1663,9 +1824,6 @@ VIDEO — pravidla, která nesmíš porušit:
         name: call.name,
         args: call.args,
         id: call.id,
-        ...(call.thoughtSignature
-          ? { thoughtSignature: call.thoughtSignature }
-          : {}),
       })),
     });
     for (const call of calls) {
@@ -1688,9 +1846,6 @@ VIDEO — pravidla, která nesmíš porušit:
             name,
             response: modelResult,
             id: call.id,
-            ...(call.thoughtSignature
-              ? { thoughtSignature: call.thoughtSignature }
-              : {}),
           }],
         });
       } catch (error) {
@@ -1713,9 +1868,6 @@ VIDEO — pravidla, která nesmíš porušit:
             name,
             response: { error: message },
             id: call.id,
-            ...(call.thoughtSignature
-              ? { thoughtSignature: call.thoughtSignature }
-              : {}),
           }],
         });
       }

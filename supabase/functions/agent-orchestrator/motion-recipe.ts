@@ -1,12 +1,36 @@
 // Plán pohybu z obrázku + promptu uživatele.
 //
-// Volá Gemini s vision, dostane obrázek a text "co na obrázku rozpohybovat",
+// Volá vidoucí (vision) model, dostane obrázek a text "co na obrázku rozpohybovat",
 // a vrátí JSON recept, co přesně se má hýbat. Bez toho bychom měli jednu
 // šablonu pro všechny fotky — a to je přesně to, co uživatel nechce.
 //
 // Nic se nevymýšlí navíc: pokud uživatel neřekne "kouř", recept neobsahuje
 // kouř. Jediné, co se přidává automaticky, je pomalý celkový nájezd
 // (background.push), protože jinak je to statický snímek.
+//
+// PŘEHODNUTO NA OpenAI TVAR (llm-map §3.6 a §3.7)
+// ----------------------------------------------
+// Původně to byla Gemini-only větev: `inlineData` + `responseMimeType:"application/json"`.
+// Dnes je to `/v1/chat/completions` s `content:[{type:"image_url",...}]` a
+// `response_format:{type:"json_object"}`. DVA Gemini-ismy zmizely a jsou nahrazené:
+//
+//   inlineData (base64 obrázek)  → image_url data URL   (`toDataUrl`)
+//   responseMimeType json         → response_format + PONECHAVÝ regex řetězec
+//
+// `response_format` je prosba, ne záruka: bezplatné modely ho často neznají (400)
+// nebo JSON stejně lámejí. Proto `safeJson()` (fence strip → první `{`…poslední `}` →
+// JSON.parse) pořád existuje a je jediná pojistka. `sanitizeRecipe()` navíc
+// fail-closed odhazuje všechno, co renderer neumí vykreslit.
+//
+// VISION BYLO ZMĚŘENO, NE ODHADNUTO (viz report, 2026-10-05)
+// -------------------------------------------------------
+// Volání modelu s `image_url` na textovém modelu není chyba kód, je to 400/415
+// nebo (horší) tichý nesmysl. Změřeno přímo na obrázku 128×128 (levá půl červená,
+// pravá modrá, uprostřed bílý kruh):
+//   nvidia/meta/llama-3.2-90b-vision-instruct  → 200, správně "red/blue/circle"
+//   nvidia/meta/llama-3.2-11b-vision-instruct  → 200, správně
+//   nvidia/microsoft/phi-3-vision-128k-instruct → 404 (na tomhle účtu neexistuje)
+// NVIDIA nemá denní strop, takže je to primární zdroj vidění.
 
 const RECIPE_SYSTEM = `You write MOTION RECIPES for still images.
 
@@ -168,11 +192,44 @@ function safeJson(text: string): unknown {
   }
 }
 
-/** Zeptá se Gemini na plán pohybu. Vrátí null, když to nedá smysl. */
+/** Absolutní mez velikosti obrázku. 6 MB je limit zhruba i pro NVIDIA. */
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
+
+/**
+ * Rozpočet ČASU celé vision větve.
+ *
+ * Edge funkce má wall-clock limit (naměřeno: `HTTP 546
+ * WORKER_RESOURCE_LIMIT` po ~150 s). Jeden vidoucí model na SKUTEČNÉM obalu
+ * Temneyho (476 KB JPEG, 2308 prompt tokenů) zabere ~27 s. Tři modely po 90 s
+ * by daly 270 s, tedy spolehlivý 546 a uživatel by čekal dvě a půl minuty na nic.
+ *
+ * Proto: jeden časový limit na POKUS a JEDEN společný na celý řetězec. Když
+ * rozpočet dojde, `planMotion` vrátí `recipe: null` s `reason` a volající
+ * odmítne — fail-closed, ne tichá polovina práce.
+ *
+ * Rozdělení je schválně drsné: reálný náklad je JEDEN vidoucí model. Naměřeno
+ * živě na produkci — `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` na
+ * skutečném obalu vrátil recept za 27 s a celý `make_music_video` do 37 s.
+ * Když nano-omni spadne, je na řadě 90b, ale většinou už není čas — a to je
+ * v pořádku. Radí selhat s jasnou českou zprávou než 546 po dvou minutách.
+ */
+const VISION_ATTEMPT_MS = 40_000;
+const VISION_TOTAL_MS = 55_000;
+
+/** `data:<mime>;base64,<data>` — tvar, kterému rozumí OpenAI vision. */
+export function toDataUrl(mimeType: string, base64: string): string {
+  return `data:${mimeType};base64,${base64}`;
+}
+
+/**
+ * Zeptá se vidoucího modelu na plán pohybu. Vrátí `recipe: null` s `reason`,
+ * když to nedá smysl. NEHAZUJE — volající dostane `{recipe: null}` a sám
+ * rozhodne, jestli to je chyba, která má jít do `agent_tool_logs`.
+ */
 export async function planMotion(opts: {
   key: string;
   base: string;
-  model: string;
+  models: string[];
   imageBase64: string;
   mimeType: string;
   prompt: string;
@@ -197,45 +254,146 @@ ${opts.prompt}
 
 Write the motion recipe. JSON only.`;
 
-  const response = await fetch(
-    `${opts.base}/models/${opts.model}:generateContent`,
+  const messages = [
+    { role: "system", content: RECIPE_SYSTEM },
     {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": opts.key,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: RECIPE_SYSTEM }] },
-        contents: [{
-          role: "user",
-          parts: [
-            { text: header ? `${header}\n\n${body}` : body },
-            { inlineData: { mimeType: opts.mimeType, data: opts.imageBase64 } },
-          ],
-        }],
-        generationConfig: {
-          temperature: 0.25,
-          responseMimeType: "application/json",
-        },
-      }),
+      role: "user",
+      content: [
+        { type: "text", text: header ? `${header}\n\n${body}` : body },
+        { type: "image_url", image_url: { url: toDataUrl(opts.mimeType, opts.imageBase64) } },
+      ],
     },
-  );
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(
-      `Gemini vision selhal (${response.status}): ${body.slice(0, 300)}`,
+  ];
+
+  const failures: string[] = [];
+  const deadline = Date.now() + VISION_TOTAL_MS;
+  for (const model of opts.models) {
+    const left = deadline - Date.now();
+    if (left <= 3_000) {
+      failures.push("vypršel společný časový limit vision analýzy");
+      break;
+    }
+    const sent = await visionPost(
+      opts.base,
+      opts.key,
+      model,
+      messages,
+      true,
+      undefined,
+      Math.min(VISION_ATTEMPT_MS, left),
     );
+    if (!sent.ok) {
+      failures.push(`${model}: ${sent.note}`);
+      // Bez klíče se to opakovat nemá; 401/403 je chyba konfigurace, ne modelu.
+      if (sent.status === 401 || sent.status === 403) break;
+      continue;
+    }
+    if (sent.content) {
+      const out = sanitizeRecipe(safeJson(sent.content));
+      if (out.recipe) return { ...out, model, raw: sent.content.slice(0, 1500) };
+      // Model odpověděl, ale recept je nepoužitelný. Další model může být lepší.
+      failures.push(`${model}: ${out.reason ?? "recept nevyšel"}`);
+      continue;
+    }
+    // `content: null` + `finish_reason:"length"` = reasoning sežral rozpočet.
+    // Bereme to jako selhání POKUSU a zkusíme to s větším rozpočtem, ne jako
+    // prázdný recept (viz llm.ts poznámka A — tentýž bug, jiná větev).
+    if (sent.finish === "length") {
+      const retryLeft = deadline - Date.now();
+      if (retryLeft > 3_000) {
+        const retry = await visionPost(
+          opts.base,
+          opts.key,
+          model,
+          messages,
+          false,
+          3000,
+          Math.min(VISION_ATTEMPT_MS, retryLeft),
+        );
+        if (retry.ok && retry.content) {
+          const out = sanitizeRecipe(safeJson(retry.content));
+          if (out.recipe) {
+            return { ...out, model, raw: retry.content.slice(0, 1500) };
+          }
+        }
+      }
+      failures.push(`${model}: reasoning sežral rozpočet, odpověď vyprázdněná`);
+      continue;
+    }
+    failures.push(`${model}: prázdná odpověď`);
   }
-  const payload = await response.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  return {
+    recipe: null,
+    reason: failures.join(" | ") || "žádný vidoucí model neodpověděl",
+    model: opts.models[0] ?? "",
+    raw: "",
   };
-  const raw =
-    payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join(
-      "",
-    ) ?? "";
-  const out = sanitizeRecipe(safeJson(raw));
-  return { ...out, model: opts.model, raw: raw.slice(0, 1500) };
+}
+
+type VisionSent =
+  | { ok: true; content: string; finish: string }
+  | { ok: false; status: number; note: string };
+
+/** Jeden pokus na `/chat/completions`. Timeout je povinný — visící požadavek není recept. */
+async function visionPost(
+  base: string,
+  key: string,
+  model: string,
+  messages: unknown[],
+  json: boolean,
+  maxTokens = 1400,
+  timeoutMs = VISION_ATTEMPT_MS,
+): Promise<VisionSent> {
+  const send = async () => {
+    try {
+      const response = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.25,
+          max_tokens: maxTokens,
+          ...(json ? { response_format: { type: "json_object" } } : {}),
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok) {
+        return { ok: false as const, status: response.status, note: `HTTP ${response.status}` };
+      }
+      return { ok: true as const, response };
+    } catch (error) {
+      const aborted = error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "AbortError");
+      return { ok: false as const, status: 0, note: aborted ? "vypršel časový limit" : "síťová chyba" };
+    }
+  };
+
+  let sent = await send();
+  // Některé vidoucí modely `response_format` neznají (400). Regex řetězec
+  // u volajícího je záloha, takže to není ztráta funkčnosti — jen 400 navíc.
+  if (!sent.ok && sent.status === 400 && json) {
+    sent = await send();
+  }
+  if (!sent.ok) return sent;
+
+  let payload: {
+    choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown } }>;
+  };
+  try {
+    payload = await sent.response.json() as typeof payload;
+  } catch {
+    return { ok: false, status: 0, note: "nečitelná odpověď" };
+  }
+  const choice = payload.choices?.[0];
+  const content = typeof choice?.message?.content === "string"
+    ? choice.message.content.trim()
+    : "";
+  const finish = typeof choice?.finish_reason === "string" ? choice.finish_reason : "neznámé";
+  return { ok: true, content, finish };
 }
 
 /** Převede plán pohybu na stručný český popis pro odpověď uživateli. */
@@ -257,29 +415,33 @@ export function describeRecipe(recipe: Record<string, unknown> | null): string {
   return parts.join(", ");
 }
 
-/** Provider, u kterého umíme plán pohybu. Stačí jen ID, klíče a modely. */
-type VisionCandidate = {
+/** Provider, u kterého umíme plán pohybu. `visionModels` je zároveň seznam
+ *  VIDĚCÍCH modelů — textový model v `models[]` sem nesmí. */
+export type VisionCandidate = {
   id: string;
   keyEnvs: string[];
   base: string;
-  models: string[];
+  visionModels?: string[];
 };
 
-/** Vyhledá Gemini vision provider + klíč. Bez vision recept nenapíšeme. */
+/**
+ * Vyhledá poskytovatele, který UMÍ vidět. Bez toho recept nenapíšeme.
+ *
+ * Dřív tady bylo `cfg.find(p => p.id === "gemini")` a `envKeys()` vracelo
+ * JEN `GOOGLE_AI_STUDIO_KEY`/`GEMINI_API_KEY`. To byla tvrdá zátka: `make_music_video`
+ * a `make_short` nemohly napsat plán pohybu, i když šlo do řetězce jiného
+ * poskytovatele. Dnes to hledá KAŽDÝ provider s `visionModels` a s klíčem.
+ */
 export function visionProvider(
   cfg: VisionCandidate[],
   env: Record<string, string | undefined>,
 ) {
-  const gemini = cfg.find((p) => p.id === "gemini");
-  if (!gemini) return null;
-  for (const envName of gemini.keyEnvs) {
-    const key = env[envName];
-    if (key) {
-      return {
-        base: gemini.base,
-        key,
-        model: gemini.models[gemini.models.length - 1],
-      };
+  for (const provider of cfg) {
+    const models = provider.visionModels ?? [];
+    if (!models.length) continue;
+    for (const envName of provider.keyEnvs) {
+      const key = env[envName];
+      if (key) return { id: provider.id, base: provider.base, key, models };
     }
   }
   return null;
