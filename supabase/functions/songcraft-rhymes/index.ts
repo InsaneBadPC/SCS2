@@ -1,19 +1,30 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
+import { hasLlmKey, LlmError, llmComplete } from "../_shared/llm.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const clean = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 60) : "";
 const uniq = (list: string[], limit: number) => [...new Set(list.filter(Boolean).map((entry) => entry.toLowerCase()))].slice(0, limit);
 
+// Model pro rýmy — vybrán živým měřením 2026-10-05 (viz report k výměně).
+// Porovnání na slovech noc / srdce / sen:
+//   nvidia/nemotron-3-super-120b-a12b → "moc", jen/pen/den/len/ven/zen/gen;
+//                                    assonance SKOREC reálná slova (staré, těžké)
+//   nvidia/nemotron-3-ultra-550b    → "moc", "bloc", "ploc"; "klen", "zelen",
+//                                    "přítomen" = vymyšlené a oříznuté tvary
+//   openai/gpt-oss-20b               → vrací ZPÁTKY hledané slovo ("noc" jako
+//                                    rýmu k "noc") a 3+ minuty na odpověď
+//   qwen/gwen3.8-27b:free / gemma    → celý `:free` povrch je 50 req/den
+const RHYME_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return json({ error: "Použij POST požadavek." }, 405);
   const authorization = request.headers.get("Authorization");
-  const geminiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
   if (!authorization) return json({ error: "Chybí přihlášení." }, 401);
-  if (!geminiKey) return json({ error: "Hledač rýmů není správně nakonfigurován." }, 503);
+  if (!hasLlmKey()) return json({ error: "Hledač rýmů není správně nakonfigurován." }, 503);
 
   const supabase = createClient(Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL") || "", Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY") || "", { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -49,27 +60,39 @@ Deno.serve(async (request) => {
     "Vrať POUZE JSON ve tvaru {\"exact\":[\"…\"],\"multiword\":[\"…\"],\"assonance\":[\"…\"]} — exact max 12, multiword max 12, assonance max 8 položek, bez vysvětlení.",
   ].join("\n");
 
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: instruction }] },
-      contents: [{ role: "user", parts: [{ text: `Rýmy ke slovu: ${word}` }] }],
-      generationConfig: { temperature: 0.8, maxOutputTokens: 4000, thinkingConfig: { thinkingLevel: "low" } },
-    }),
-  });
-  if (!response.ok) return json({ error: "AI teď odmítla požadavek. Zkus to za chvíli." }, response.status === 429 ? 429 : 502);
-  const generated = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }> };
-  let raw = generated.candidates?.[0]?.content?.parts?.map((part) => typeof part.text === "string" ? part.text : "").join("\n").trim() ?? "";
+  let raw = "";
+  try {
+    // `thinkingConfig.thinkingLevel` z původního Gemini těla je ZAMAZÁN — nemá
+    // ekvivalent. Místo toho dostává reasoning model vlastní rozpočet uvnitř
+    // `llm.ts`, jinak sežere `max_tokens` a vrátí `content: null`.
+    const result = await llmComplete({
+      system: instruction,
+      messages: [{ role: "user", content: `Rýmy ke slovu: ${word}` }],
+      temperature: 0.8,
+      maxTokens: 4_000,
+      json: true,
+      timeoutMs: 75_000,
+      prefer: [{ provider: "nvidia", model: RHYME_MODEL }],
+    });
+    raw = result.text;
+  } catch (error) {
+    const status = error instanceof LlmError ? error.status : 502;
+    return json({ error: "AI teď odmítla požadavek. Zkus to za chvíli." }, status === 429 ? 429 : 502);
+  }
   raw = raw.replace(/^```(?:json)?\n?/i, "").replace(/```$/g, "").trim();
   const match = /\{[\s\S]*\}/.exec(raw);
   if (!match) return json({ error: "AI nevrátila platný výsledek." }, 502);
   try {
     const parsed = JSON.parse(match[0]) as { exact?: unknown; multiword?: unknown; assonance?: unknown };
     const toArray = (value: unknown) => Array.isArray(value) ? value.map(clean) : [];
+    // Bezplatný model občas vrátí HLEDANÉ SLOVO jako jeho vlastní rýmu
+    // (naměřeno: `sen` → exact:["sen", …]). Není to rýma, je to chyba, a jde
+    // to ověřit mechanicky — na rozdíl od fonologie, kterou tady ověřit nejde
+    // (viz poznámka u RHYME_MODEL).
+    const notItself = (list: string[]) => list.filter((entry) => entry.toLowerCase() !== word.toLowerCase());
     return json({
-      exact: uniq(toArray(parsed.exact), 12),
-      multiword: uniq(toArray(parsed.multiword), 12),
+      exact: uniq(notItself(toArray(parsed.exact)), 12),
+      multiword: uniq(notItself(toArray(parsed.multiword)), 12),
       assonance: uniq(toArray(parsed.assonance), 8),
     });
   } catch {

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
+import { hasLlmKey, LlmError, llmComplete, type LlmMessage } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,13 +16,18 @@ type AssistantInput = { message?: unknown; history?: unknown };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: corsHeaders });
 const clip = (value: unknown, maximum: number) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, maximum) : "";
 
-function historyFrom(input: AssistantInput): Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> {
+// Historie se převádí na OpenAI tvar (`{role, content}`) rovnou zde. Dřív
+// vracela Gemini `role:"model"`, což je pro `/chat/completions` neplatné —
+// `llm.ts` to sice umí přemapovat, ale je zbytečné posílat cizí tvar, když se
+// dá převést na místě. `llm.ts` navíc drží mapování `model` → `assistant` jako
+// pojistku pro případ, že někdo historii volá jinudy.
+function historyFrom(input: AssistantInput): LlmMessage[] {
   if (!Array.isArray(input.history)) return [];
-  return input.history.slice(-10).flatMap((item) => {
+  return input.history.slice(-10).flatMap((item): LlmMessage[] => {
     const message = item as ChatMessage;
     const text = clip(message.content, 1_000);
     if (!text) return [];
-    return [{ role: message.role === "assistant" ? "model" : "user", parts: [{ text }] }];
+    return [{ role: message.role === "assistant" ? "assistant" : "user", content: text }];
   });
 }
 
@@ -33,9 +39,9 @@ Deno.serve(async (request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY");
   const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
-  const geminiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
   if (!authorization) return json({ error: "Chybí přihlášení." }, 401);
-  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey || !geminiKey) return json({ error: "Experimentální asistent není správně nakonfigurován." }, 503);
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseServiceRoleKey) return json({ error: "Experimentální asistent není správně nakonfigurován." }, 503);
+  if (!hasLlmKey()) return json({ error: "Experimentální asistent není správně nakonfigurován." }, 503);
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -75,18 +81,21 @@ Deno.serve(async (request) => {
     `SOUKROMÝ KONTEXT:\n${JSON.stringify(context)}`,
   ].join("\n\n");
 
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: instruction }] },
-      contents: [...historyFrom(input ?? {}), { role: "user", parts: [{ text: message }] }],
-      generationConfig: { temperature: 0.7, maxOutputTokens: 700 },
-    }),
-  });
-  if (!response.ok) return json({ error: "Bezplatný Gemini model nyní odmítl požadavek. Zkus to za chvíli." }, response.status === 429 ? 429 : 502);
-  const generated = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }> };
-  const answer = clip(generated.candidates?.[0]?.content?.parts?.map((part) => typeof part.text === "string" ? part.text : "").join("\n"), 6_000);
+  let answer = "";
+  try {
+    const result = await llmComplete({
+      system: instruction,
+      messages: [...historyFrom(input ?? {}), { role: "user", content: message }],
+      temperature: 0.7,
+      maxTokens: 700,
+      timeoutMs: 60_000,
+    });
+    answer = result.text;
+  } catch (error) {
+    const status = error instanceof LlmError ? error.status : 502;
+    return json({ error: "AI asistent teď neodpovídá. Zkus to za chvíli." }, status === 429 ? 429 : 502);
+  }
+  answer = clip(answer, 6_000);
   if (!answer) return json({ error: "Asistent nevrátil textovou odpověď." }, 502);
   return json({ answer });
 });

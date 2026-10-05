@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
+import { hasLlmKey, LlmError, llmComplete } from "../_shared/llm.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -12,9 +13,8 @@ Deno.serve(async (request) => {
   const authorization = request.headers.get("Authorization");
   const url = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SONGCRAFT_SUPABASE_ANON_KEY");
-  const geminiKey = Deno.env.get("GOOGLE_AI_STUDIO_KEY");
   if (!authorization || !url || !anonKey) return json({ error: "Chybí bezpečné připojení." }, 401);
-  if (!geminiKey) return json({ error: "AI copywriter není správně nakonfigurován." }, 503);
+  if (!hasLlmKey()) return json({ error: "AI copywriter není správně nakonfigurován." }, 503);
 
   const supabase = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -62,19 +62,21 @@ Deno.serve(async (request) => {
         "Vrať POUZE tagy oddělené čárkou, bez číslování, bez mřížek, bez dalšího textu.",
       ].join("\n");
 
-  const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": geminiKey },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: `${instruction}\n\nMATERIÁL SKLADBY:\n${contextLines}` }] },
-      contents: [{ role: "user", parts: [{ text: input.action === "description" ? "Napiš popis videa na YouTube." : "Navrhni tagy." }] }],
-      generationConfig: { temperature: 0.8, maxOutputTokens: 900 },
-    }),
-  });
-  if (!response.ok) return json({ error: "Google AI teď odmítla požadavek. Zkus to za chvíli." }, response.status === 429 ? 429 : 502);
-  const generated = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: unknown }> } }> };
-  let text = clip(generated.candidates?.[0]?.content?.parts?.map((part) => typeof part.text === "string" ? part.text : "").join("\n"), 5000)
-    .replace(/^```[a-z]*\n?|```$/g, "").trim();
+  let text = "";
+  try {
+    const result = await llmComplete({
+      system: `${instruction}\n\nMATERIÁL SKLADBY:\n${contextLines}`,
+      messages: [{ role: "user", content: input.action === "description" ? "Napiš popis videa na YouTube." : "Navrhni tagy." }],
+      temperature: 0.8,
+      maxTokens: 900,
+      timeoutMs: 60_000,
+    });
+    text = result.text;
+  } catch (error) {
+    const status = error instanceof LlmError ? error.status : 502;
+    return json({ error: "AI popisování teď neodpovídá. Zkus to za chvíli." }, status === 429 ? 429 : 502);
+  }
+  text = clip(text, 5000).replace(/^```[a-z]*\n?|```$/g, "").trim();
   if (!text) return json({ error: "AI nevrátila text. Zkus to znovu." }, 502);
   if (input.action === "tags") {
     text = text.split(/[,\n]/).map((tag) => tag.replace(/^[-#\d.\s]+/, "").trim()).filter(Boolean).slice(0, 18).join(", ");
