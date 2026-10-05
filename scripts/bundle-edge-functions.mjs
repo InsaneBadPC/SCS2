@@ -360,7 +360,7 @@ function bundleOne(slug) {
 const API = "https://api.supabase.com/v1";
 
 async function apiRequest(path, token, init = {}) {
-  const response = fetch(`${API}${path}`, {
+  const response = await fetch(`${API}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
