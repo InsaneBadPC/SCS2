@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const orchestrator = readFileSync("supabase/functions/agent-orchestrator/index.ts", "utf8");
@@ -111,19 +112,41 @@ describe("agent and publication boundaries", () => {
   });
 
   it("nasazuje youtube-status, jinak aplikace spadne na staré tlačítko", () => {
-    // Seznam funkcí je ruční. Když nová funkce není v workflow, zůstane
-    // nenasazená, appka ji nemůže volat a vrátí se k nefungujícímu tlačítku,
-    // které hází redirect_uri_mismatch.
+    // Seznam nasazovaných funkcí je ruční. Když nová funkce není v tabulce
+    // `VERIFY_JWT`, zůstane nenasazená, appka ji nemůže volat a vrátí se
+    // k nefungujícímu tlačítku, které hází redirect_uri_mismatch.
+    //
+    // Zdroj pravdy se 2026-10-05 přesunul z workflowu do
+    // `scripts/bundle-edge-functions.mjs`: workflow už žádné
+    // `supabase functions deploy --use-api <slug>` nepíše, celý deploy dělá
+    // `node scripts/bundle-edge-functions.mjs --deploy`. Test tedy čte tabulku
+    // ze skriptu, ne z YAMLu — a navíc kontroluje, že tabulka pokrývá KAŽDOU
+    // funkci na disku (to původní test neuměl).
+    const bundler = readFileSync("scripts/bundle-edge-functions.mjs", "utf8");
     const wf = readFileSync(".github/workflows/deploy-agent-orchestrator.yml", "utf8");
-    const deployed = [...wf.matchAll(/functions deploy --use-api ([a-z0-9-]+)/g)].map((m) => m[1]);
-    expect(deployed).toContain("youtube-status");
-    expect(new Set(deployed).size, "duplicitní nasazování").toBe(deployed.length);
+    expect(wf, "workflow musí nasazovat přes bundler").toContain("scripts/bundle-edge-functions.mjs --deploy");
+
+    const table = bundler.slice(bundler.indexOf("const VERIFY_JWT = {"));
+    const declared = [...table.slice(0, table.indexOf("\n};")).matchAll(/^ {2}"?([a-z0-9-]+)"?:/gm)].map(
+      (m) => m[1],
+    );
+    expect(declared).toContain("youtube-status");
+    expect(new Set(declared).size, "duplicitní nasazování").toBe(declared.length);
+
+    const onDisk = readdirSync("supabase/functions", { withFileTypes: true })
+      .filter((e) => e.isDirectory() && existsSync(join("supabase/functions", e.name, "index.ts")))
+      .map((e) => e.name)
+      .sort();
+    expect(declared.sort(), "funkce mimo tabulku zůstane nenasazená").toEqual(onDisk);
   });
 
   it("nasazuje legal stránky veřejně, ať na ně Googlebot dosáhne", () => {
-    const wf = readFileSync(".github/workflows/deploy-agent-orchestrator.yml", "utf8");
+    // `legal: false` v tabulce `VERIFY_JWT` = veřejná funkce (bez JWT). Před
+    // 2026-10-05 to bylo `functions deploy --use-api legal --no-verify-jwt`
+    // v workflowu; bundler přesunul tuto informaci do skriptu.
+    const bundler = readFileSync("scripts/bundle-edge-functions.mjs", "utf8");
     const legal = readFileSync("supabase/functions/legal/index.ts", "utf8");
-    expect(wf).toMatch(/functions deploy --use-api legal .*--no-verify-jwt/);
+    expect(bundler, "legal musí být veřejná (verify_jwt=false)").toMatch(/^ {2}legal: false,$/m);
     // veřejná stránka nesmí vracet nic osobního
     expect(legal).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
     expect(legal).not.toContain("youtube_credentials");
