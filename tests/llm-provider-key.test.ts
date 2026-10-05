@@ -6,10 +6,12 @@ import { describe, expect, it } from "vitest";
  *
  * Dřív tu byl test na `gemini-3.1-flash-lite` + `GOOGLE_AI_STUDIO_KEY` +
  * `generativelanguage.googleapis.com`. Po výměně poskytovatele je z toho
- * mrtvý kód: klíč je v produkci blokovaný (`API_KEY_SERVICE_BLOCKED`) a řetěz
- * v `_shared/llm.ts` Google používá až jako poslední záchrany. Test se proto
- * přejmenoval a přepsal na `OPENROUTER_API_KEY` / `NVIDIA_API_KEY` — stejný
- * základ, jiný provider, jiný base URL.
+ * mrtvý kód: klíč byl v produkci blokovaný (`API_KEY_SERVICE_BLOCKED`) a
+ * řetěz v `_shared/llm.ts` Google měl až jako poslední záchranu. Test se
+ * proto přejmenoval a přepsal na `OPENROUTER_API_KEY` / `NVIDIA_API_KEY` —
+ * stejný základ, jiný provider, jiný base URL. (2026-10-05: klíč
+ * vyměněn za funkční `AQ.` a Gemini je teď PRVNÍ v řetězci — viz
+ * živé srovnání v `_shared/llm.ts`.)
  *
  * Klíč se čte z proměnné prostředí, nikdy z repa. Bez něj se test přeskočí,
  * aby zelená barva nezastřela, že se vlastně nic neotestovalo.
@@ -24,8 +26,9 @@ if (!OPENROUTER_KEY && !NVIDIA_KEY) {
   );
 }
 
-// Pořadí musí odpovídat `PROVIDERS` v `_shared/llm.ts`. NVIDIA je první, protože
-// bezplatný OpenRouter `:free` povrch je 50 požadavků denně na celý účet.
+// Cíle musí odpovídat `PROVIDERS` v `_shared/llm.ts` (2026-10-05:
+// Gemini první, NVIDIA druhá — bezplatný OpenRouter `:free` povrch
+// je 50 požadavků denně na celý účet a je vyčerpán).
 //
 // Pozor: oba případy se MUSÍ registrovat i bez klíče (`it.skipIf`), jinak
 // vitest skončí na „No test found in suite“ a neřekne, že se přeskočilo.

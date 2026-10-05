@@ -185,26 +185,26 @@ type ProviderCfg = {
   visionModels?: string[];
 };
 
-// PŘÍKAZ ŘETĚZU NENÍ ĽIBOVOLNÝ A JE ZMĚNĚN Oproti plánu. Změřeno na živém
-// účtu 2026-10-05 12:21 UTC (`x-ratelimit-*` hlavičky, viz report):
+// PŘÍKAZ ŘETĚZU NENÍ ĽIBOVOLNÝ A JE ZMĚNĚN Oproti plánu.
 //
-//   NVIDIA NIM              → HTTP 200, ŽÁDNÉ `x-ratelimit-*` hlavičky vůbec.
-//                             Denní strop se neprojeví; jediné riziko je krátký
-//                             limit na minutu, který je přechodný.
-//   OpenRouter `:free`      → `x-ratelimit-limit: 50`, `remaining: 0`,
-//                             `reset: 2026-10-06T00:00:00Z`. To je 50 POŽADAVKŮ
-//                             NA DEN NAPŘIČ VŠEMI `:free` MODELY DOHROMADY —
-//                             ne „limit na model". Chybová hláška to potvrzuje:
-//                             `Rate limit exceeded: free-models-per-day`.
-//                             Volání tedy vrací 429 s tělem a hlavičkou resetu.
-//   OpenRouter záložní klíč → HTTP 200, žádné hlavičky limitu, tedy VLASTNÍ
-//                             kvóta. Živě prokázáno, že funguje, i když je
-//                             hlavní klíč na 0/50.
+// ŽIVÉ SROVNÁNÍ 2026-10-05 (stejný prompt jako `songcraft-rhymes`,
+// slova srdce / noc / sen / plamen, každý provider 4×):
 //
-// Proto je NVIDIA PRVNÍ a OpenRouter až druhý. Původní plán (OpenRouter první)
-// byl postaven na jednom 200 v okamžiku testu; to není udržitelný stav.
+//   gemini-3.1-flash-lite → rýmy JEN SKUTEČNÁ ČESKÁ SLOVA
+//                             (srdce→ruce, ovce, správce, zrádce, dárce,
+//                             vládce; noc→moc, pomoc, nemoc, velmoc;
+//                             plamen→křemen, jemen), 2,9–22 s, 0× 503.
+//   gemini-3.8-flash       → taktéž jen reálná slova, 5,7 s, ale 2× 503.
+//   nvidia nemotron-3-super → vymyšlené tvary (srdce→„pětce“, „šestce“,
+//                             „sedmce“, „osmce“), plamen → PRÁZDNÝ výsledek,
+//                             9,9–16 s.
 //
-// `SONGCRAFT_LLM_PROVIDERS` umožňuje pořadí přepsat.
+// Gemini je pro češtinu tedy MĚŘENĚ lepší i rychlejší → je první.
+// Klíč je API key (`AQ.`, žádný expiry, žádný refresh) a nemá denní
+// strop jako OpenRouter `:free` (0/50, reset 2026-10-06T00:00Z).
+// NVIDIA zůstává druhá (bez denního stropu, ověřené tool calling),
+// OpenRouter `:free` je vyčerpán a je jen rychlý 429, záložní klíč
+// poslední. `SONGCRAFT_LLM_PROVIDERS` umožňuje pořadí přepsat.
 //
 // PROČ V ŘETĚZU NENÍ ŽÁDNÝ BACKOFF
 // -------------------------------
@@ -219,6 +219,25 @@ type ProviderCfg = {
 // `content: null` v `agent-orchestrator`, což je chyba našeho požadavku, ne
 // odmítnutí poskytovatelem.
 const PROVIDERS: ProviderCfg[] = [
+  {
+    // PRVNÍ V ŘETĚZU — viz živé srovnání nahoře. Mluví Gemini API,
+    // ne OpenAI tvar: `systemInstruction`, `contents`, `generationConfig`,
+    // odpověď v `candidates[0].content.parts[*].text`. Autentizace
+    // `x-goog-api-key` hlavičkou (`?key=` funguje taky, `Bearer` ne).
+    id: "gemini",
+    base: "https://generativelanguage.googleapis.com/v1beta",
+    keyEnvs: ["GOOGLE_AI_STUDIO_KEY", "GEMINI_API_KEY"],
+    // Podle naměřené spolehlivosti 2026-10-05: 3.1-flash-lite nevrátil
+    // v celém srovnání žádný 503, 3.8-flash dva, 3.6-flash tři a jednou
+    // `finishReason:"MAX_TOKENS"` (thinking si snědl rozpočet).
+    models: [
+      "gemini-3.1-flash-lite",
+      "gemini-3.8-flash",
+      "gemini-3.6-flash",
+      "gemini-2.5-flash-lite",
+    ],
+    reasoningCost: 0,
+  },
   {
     id: "nvidia",
     base: "https://integrate.api.nvidia.com/v1",
@@ -280,16 +299,6 @@ const PROVIDERS: ProviderCfg[] = [
     models: ["nvidia/nemotron-3-super-120b-a12b:free", "google/gemma-4-31b-it:free"],
     extraBody: { reasoning: { max_tokens: 1024 } },
     reasoningCost: 1024,
-  },
-  {
-    // Záchrana, ne plán. Klíč je v produkci blokovaný (`API_KEY_SERVICE_BLOCKED`)
-    // a majitel to uzavřel; tento záznam existuje jen, aby se řetěz nerozbil,
-    // kdyby klíč někdy byl. V `providerOrder()` je až poslední.
-    id: "gemini",
-    base: "https://generativelanguage.googleapis.com/v1beta",
-    keyEnvs: ["GOOGLE_AI_STUDIO_KEY", "GEMINI_API_KEY"],
-    models: ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"],
-    reasoningCost: 0,
   },
 ];
 
@@ -428,38 +437,56 @@ async function callProvider(
     headers["X-Title"] = "SongCraft Studio";
   }
 
-  const send = async () => {
+  /**
+   * Jeden HTTP pokus. `requestBody` přepisuje tělo (pokus s rezervou
+   * na thinking — viz `MAX_TOKENS` hlídání dole).
+   *
+   * Gemini 503 „high demand“ je PřECHODNÝ (živě 2026-10-05: 3× z 4
+   * pokusů na `gemini-3.6-flash`, na dalším pokusu 200). Proto JEDEN
+   * opakovaný pokus po 300 ms — rychlý a bez dlouhého spánku. Bez
+   * něj by jeden špatný okamžik poslal dotaz rovnou na OpenRouter
+   * `:free` s vyčerpaným denním stropem.
+   */
+  const post = async (requestBody?: Record<string, unknown>) => {
+    const response = await fetch(`${provider.base}/${isGemini ? `models/${encodeURIComponent(model)}:generateContent` : "chat/completions"}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody ?? body),
+      signal: AbortSignal.timeout(opts.timeoutMs),
+    });
+    if (response.ok) return { ok: true as const, response };
+    // Tělo chyby čteme jen kvůli rozpoznání DENNÍHO stropu (`free-models-per-day`)
+    // — nikoli proto, že by se vracelo uživateli. Klíče ani hlavičky s
+    // limity se do hlášení nedostávají.
+    let snippet = "";
     try {
-      const response = await fetch(`${provider.base}/${isGemini ? `models/${encodeURIComponent(model)}:generateContent` : "chat/completions"}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(opts.timeoutMs),
-      });
-      if (!response.ok) {
-        // Tělo chyby čteme jen kvůli rozpoznání DENNÍHO stropu (`free-models-per-day`)
-        // — nikoli proto, že by se vracelo uživateli. Klíče ani hlavičky s
-        // limity se do hlášení nedostávají.
-        let snippet = "";
-        try {
-          snippet = (await response.text()).slice(0, 300);
-        } catch {
-          snippet = "";
-        }
-        const rateLimit = classifyRateLimit(
-          provider.id,
-          response.status,
-          response.headers.get("x-ratelimit-reset"),
-          snippet,
-        );
-        const note = rateLimit === "daily-cap"
-          ? `HTTP ${response.status} denní limit free modelů vyčerpán`
-          : `HTTP ${response.status}`;
-        return rateLimit
-          ? { ok: false as const, status: response.status, note, rateLimit }
-          : { ok: false as const, status: response.status, note };
-      }
-      return { ok: true as const, response };
+      snippet = (await response.text()).slice(0, 300);
+    } catch {
+      snippet = "";
+    }
+    const rateLimit = classifyRateLimit(
+      provider.id,
+      response.status,
+      response.headers.get("x-ratelimit-reset"),
+      snippet,
+    );
+    const note = rateLimit === "daily-cap"
+      ? `HTTP ${response.status} denní limit free modelů vyčerpán`
+      : `HTTP ${response.status}`;
+    return {
+      ok: false as const,
+      status: response.status,
+      note,
+      ...(rateLimit ? { rateLimit } : {}),
+    };
+  };
+
+  const send = async (requestBody?: Record<string, unknown>) => {
+    try {
+      const first = await post(requestBody);
+      if (first.ok || !isGemini || first.status !== 503) return first;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return await post(requestBody);
     } catch (error) {
       // Timeout je visící požadavek, ne výsledek — vždy zkus další poskytovatele.
       const aborted = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
@@ -493,12 +520,51 @@ async function callProvider(
   }
 
   if (isGemini) {
-    const candidates = (payload.candidates ?? []) as Array<{ content?: { parts?: Array<{ text?: unknown }> } }>;
+    const candidates = (payload.candidates ?? []) as Array<{ finishReason?: unknown; content?: { parts?: Array<{ text?: unknown }> } }>;
+    const finish = typeof candidates[0]?.finishReason === "string" ? candidates[0].finishReason : "";
     const text = candidates[0]?.content?.parts
       ?.map((part) => (typeof part.text === "string" ? part.text : ""))
       .join("\n")
       .trim() ?? "";
-    return text ? { ok: true, text } : { ok: false, status: 0, note: "prázdná odpověď" };
+    if (text && finish !== "MAX_TOKENS") return { ok: true, text };
+    // `finishReason:"MAX_TOKENS"` (s textem i bez) = thinking si
+    // vzal celý rozpočet, odpověď usekla — Gemini ekvivalent
+    // OpenAI `content: null` + `finish_reason:"length"` (živě
+    // naměřeno na `gemini-3.6-flash`: useknutý JSON). Jedna
+    // rezerva: `thinkingBudget` sváže thinking a `maxOutputTokens`
+    // dostane hlavu navíc. Jen JEDEN pokus — dál už jde na
+    // další model/poskytovatele.
+    const headroom = await send({
+      ...body,
+      generationConfig: {
+        ...(body.generationConfig as Record<string, unknown> | undefined),
+        maxOutputTokens: (opts.maxTokens ?? 1024) + 1024,
+        thinkingConfig: { thinkingBudget: 512 },
+      },
+    });
+    if (!headroom.ok) {
+      return {
+        ok: false as const,
+        status: headroom.status,
+        note: headroom.note,
+        ...(headroom.rateLimit ? { rateLimit: headroom.rateLimit } : {}),
+      };
+    }
+    let retryPayload: Record<string, unknown>;
+    try {
+      retryPayload = await headroom.response.json() as Record<string, unknown>;
+    } catch {
+      return { ok: false, status: 0, note: "nečitelná odpověď" };
+    }
+    const retryCandidates = (retryPayload.candidates ?? []) as Array<{ finishReason?: unknown; content?: { parts?: Array<{ text?: unknown }> } }>;
+    const retryFinish = typeof retryCandidates[0]?.finishReason === "string" ? retryCandidates[0].finishReason : "neznámé";
+    const retryText = retryCandidates[0]?.content?.parts
+      ?.map((part) => (typeof part.text === "string" ? part.text : ""))
+      .join("\n")
+      .trim() ?? "";
+    return retryText && retryFinish !== "MAX_TOKENS"
+      ? { ok: true, text: retryText }
+      : { ok: false, status: 0, note: `bez textu, finish=${retryFinish}` };
   }
 
   const choices = (payload.choices ?? []) as Array<{

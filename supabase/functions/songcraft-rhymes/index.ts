@@ -3,28 +3,41 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
 import { hasLlmKey, llmComplete, llmFailureMessage } from "../_shared/llm.ts";
 import { guardRhymes, promoteExactFromMultiword, rhymeTail, shouldRetry, type GuardedRhymes } from "../_shared/rhyme-guard.ts";
+import { filterRealCzechRhymes } from "../_shared/czech-dictionary.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const clean = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 60) : "";
 
-// Model pro rýmy — vybrán živým měřením 2026-10-05 (viz report k výměně).
-// Porovnání na slovech noc / srdce / sen, PLUS testy alternativ, když už
-// jednou padaly rýmy:
-//   nvidia/nemotron-3-super-120b-a12b → jediný použitelný kandidát. Ostatní
-//                                    možnosti byly vyřazené živým měřením,
-//                                    ne odhadem — viz níže.
+// Model pro rýmy — vybrán ŽIVÝM SROVNÁNÍM 2026-10-05 (stejný
+// prompt, slova srdce / noc / sen / plamen, každý model 4×):
+//   gemini-3.1-flash-lite      → rýmy JEN SKUTEČNÁ ČESKÁ SLOVA
+//                                  (srdce→ruce, ovce, správce, zrádce,
+//                                  dárce, vládce; plamen→křemen, jemen),
+//                                  2,9–22 s, 0× 503 v celém běhu
+//   gemini-3.8-flash           → taktéž jen reálná slova, 5,7 s, 2× 503
+//   nvidia/nemotron-3-super    → vymyšlené tvary (srdce→„pětce“,
+//                                  „šestce“, „sedmce“, „osmce“),
+//                                  plamen → PRÁZDNÝ výsledek, 9,9–16 s
+//   gemini-3.6-flash           → 3× 503 „high demand“ + 1× useknutý
+//                                  JSON (`finishReason:"MAX_TOKENS"`,
+//                                  thinking snědl rozpočet — hlídá ho
+//                                  `_shared/llm.ts` rezervou a jedním
+//                                  opakovaným pokusem)
+//
+// Gemini je tedy pro češtinu MĚŘENĚ lepší i rychlejší než NVIDIA
+// → je preferován a první v řetězci. Ostatní možnosti byly
+// vyřazené živým měřením, ne odhadem:
 //   nvidia/nemotron-3-ultra-550b    → 503 „temporarily overloaded“
 //   google/gemma-4-31b-it           → bez odpovědi > 60 s (timeout)
 //   google/gemma-4-26b-a4b-it       → HTTP 404, na tomhle účtu není
 //   deepseek-ai/deepseek-v4.1-flash → bez odpovědi > 60 s (timeout)
-//   qwen/gemma přes OpenRouter `:free` → celý `:free` povrch je 50 req/den
-//     NA CELÝ ÚČET a je vyčerpaný (viz `_shared/llm.ts`), takže to není volba
+//   qwen/gemma přes OpenRouter `:free` → celý `:free` povrch je 50
+//     req/den NA CELÝ ÚČET a je vyčerpán (viz `_shared/llm.ts`)
 //
-// Proto se rozšíření modelového seznamu jako oprava NEPOUŽILO: na NVIDIA
-// nezbývá žádný jiný text model, který by českou fonologii zvládal lépe. Místo
-// toho je oprava v `_shared/rhyme-guard.ts` + jeden dotaz s přísnějším promptem.
-const RHYME_MODEL = "nvidia/nemotron-3-super-120b-a12b";
+// Zálohou zůstává zbytek řetězce (nvidia → openrouter →
+// openrouter-backup), takže pád Gemini neznamená pád hledače.
+const RHYME_MODEL = "gemini-3.1-flash-lite";
 
 /**
  * Rozpočet odpovědi v tokenech. `llm.ts` přičte `reasoningCost`, takže na
@@ -88,7 +101,7 @@ Deno.serve(async (request) => {
     "",
     "Pravidla, která nesmíš porušit:",
     "1. Přesná rýma zní stejně jako konec slova OD POSLEDNÍ SAMOHLÁSKY. Slovo končící jen stejnou samohláskou NENÍ přesná rýma.",
-    "2. Jen SKUTEČNÁ ČESKÁ SLOVA. ZAKÁZÁNO vymýšlet si slova a měnit koncovku kvůli rýmu. ZAKÁZÁNO anglická, německá i jiná cizí slova.",
+    "2. Jen SKUTEČNÁ ČESKÁ SLOVA z platného českého slovníku. ZAKÁZÁNO vymýšlet si slova a měnit koncovku kvůli rýmu. ZAKÁZÁNO anglická, německá i jiná cizí slova. KAŽDÉ vrácené slovo se automaticky ověří proti slovníku — vymyšlenina (např. „vřece“, „zřece“) je zahozena a nikdy se nevrátí uživateli.",
     "3. Krátká a dlouhá verze téže samohlásky (u/ů/ú, i/í, e/é) jsou shodné.",
     "4. Radši MENĚ než vymyšlenina. Pokud české rýmy neznáš, vrať prázdné pole.",
     "5. V multiword nesmí poslední slovo být „" + word + "“. Skupina má 2–3 slova, ne celou větu.",
@@ -105,8 +118,8 @@ Deno.serve(async (request) => {
   // Ne smyčka: dva pokusy po ~60 s jsou ~120 s a naměřený strop edge funkce je
   // ~150 s, takže třetí už by visel.
   const strictSuffix = (rejected: string[]) => [
-    "PRUHÝ POKUS. Předchozí odpověď neprošla kontrolou. Vyřazeno jako nepravdivé: " + (rejected.join(", ") || "(přesné rýmy nevyšly)") + ".",
-    "NEOPAKUJ je ani podobné vymyšleniny, hledej jinou koncovku. Pokud ke „" + tail + "“ česká slova skoro neznáš, vrať prázdné pole — prázdno je lepší než vymyšlenina.",
+    "PRUHÝ POKUS. Předchozí odpověď neprošla kontrolou. Vyřazeno jako nepravdivé nebo jako neplatné české slovo: " + (rejected.join(", ") || "(přesné rýmy nevyšly)") + ".",
+    "Pouze slova z platného českého slovníku — žádné tvary typu „vřece“/„zřece“/„vzece“, žádné zkráceniny, žádné cizí jazyky. NEOPAKUJ vyřazené tvary ani podobné, hledej jinou koncovku. Pokud ke „" + tail + "“ česká slova skoro neznáš, vrať prázdné pole — prázdno je lepší než vymyšlenina.",
   ].join("\n");
 
   let guarded: GuardedRhymes = { exact: [], multiword: [], assonance: [], rejected: [] };
@@ -145,9 +158,11 @@ Deno.serve(async (request) => {
     }
     let raw = "";
     try {
-      // `thinkingConfig.thinkingLevel` z původního Gemini těla je ZAMAZÁN — nemá
-      // ekvivalent. Místo toho dostává reasoning model vlastní rozpočet uvnitř
-      // `llm.ts`, jinak sežere `max_tokens` a vrátí `content: null`.
+      // `thinkingConfig.thinkingLevel` z původního Gemini těla je
+      // ZAMAZÁN. Gemini 3.x si thinking spravuje sám; když thinking
+      // sní rozpočet odpovědi (`finishReason:"MAX_TOKENS"`), hlídá
+      // to `_shared/llm.ts` rezervou (`thinkingBudget`) a jedním
+      // opakovaným pokusem.
       const result = await llmComplete({
         system: buildInstruction(skip) + (attempt === 0 ? "" : strictSuffix(guarded.rejected)),
         messages: [{ role: "user", content: `Rýmy ke slovu: ${word}` }],
@@ -155,12 +170,13 @@ Deno.serve(async (request) => {
         maxTokens: RHYME_MAX_TOKENS,
         json: true,
         timeoutMs: Math.min(ATTEMPT_TIMEOUT_MS, left),
-        prefer: [{ provider: "nvidia", model: RHYME_MODEL }],
-        // Rozpočet ODPOVĚDI je 2200 a reasoning dostane svůj strop navíc. Je to
-        // výslovně jiný poměr než výchozí nastavení poskytovatele, a je to
-        // změřené, ne odhadnuté — viz `providerExtraBody` v `_shared/llm.ts`.
-        // Bez stropu reasoning model přemýšlí, dokud mu neshoří rozpočet, a pak
-        // nevrátí NIC (naměřeno: 7 běhů z 8 → `content: null`, 17–69 s).
+        prefer: [{ provider: "gemini", model: RHYME_MODEL }],
+        // Knob je OpenAI-tvarový a platí jen pro poskytovatele z
+        // `prefer` — tedy Gemini, který ho IGNORUJE (mluví Gemini
+        // API, ne OpenAI tvar). Zůstává proto, že při přepsání
+        // `SONGCRAFT_LLM_PROVIDERS` na nvidia-first je NVIDIA v
+        // řetězci stejně řízena svým vlastním `extraBody` (stejné
+        // hodnoty: reasoning 1024 + effort low).
         providerExtraBody: { reasoning: { max_tokens: 1024 }, reasoning_effort: "low" },
       });
       raw = result.text;
@@ -188,10 +204,32 @@ Deno.serve(async (request) => {
       lastError = new Error("AI nevrátila JSON");
       continue;
     }
+    // SLOVNÍKOVÁ VALIDACE — poslední hlídka. Fonologické kontroly
+    // v `rhyme-guard.ts` (commit fd8c294) neznají lexikon: `vř` je
+    // platný český onset, takže `vřece`/`zřece`/`vzece` projde
+    // tvarově. Proto se každé slovo ověří proti skutečnému
+    // slovníku (`_shared/czech-dictionary.ts`, 256 943 slov).
+    // Pseudo-slova se zahodí; prázdná sada je správný výsledek,
+    // vymyšlenina nikoli. Slovník se načítá LAZY a cachuje.
+    const guardedRaw = guardRhymes(parsed, { queryWord: word, queryTail: tail, exclude: skip });
+    const dictExact = filterRealCzechRhymes(guardedRaw.exact);
+    const dictMultiword = filterRealCzechRhymes(guardedRaw.multiword);
+    const dictAssonance = filterRealCzechRhymes(guardedRaw.assonance);
+    const dictDropped = [
+      ...dictExact.dropped,
+      ...dictMultiword.dropped,
+      ...dictAssonance.dropped,
+    ];
     const attemptResult = promoteExactFromMultiword(
-      guardRhymes(parsed, { queryWord: word, queryTail: tail, exclude: skip }),
+      {
+        exact: dictExact.kept,
+        multiword: dictMultiword.kept,
+        assonance: dictAssonance.kept,
+        rejected: guardedRaw.rejected,
+      },
       { queryWord: word, queryTail: tail },
     );
+    attemptResult.rejected = [...new Set([...attemptResult.rejected, ...dictDropped])];
     guarded = merge(attemptResult);
     // Selhání PRVNIHO pokusu se tím druhým úspěchem přepíše — jinak by se
     // vrátila chyba pokusu, který už byl nahrazen lepším výsledkem.

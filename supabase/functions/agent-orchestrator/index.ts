@@ -503,14 +503,15 @@ const MAX_B64_VISION = 6 * 1024 * 1024;
 //                         Tool calling ověřen živě (viz report): `finish_reason:
 //                         "tool_calls"` + `tool_calls[].function.arguments`.
 //
-// Proto NVIDIA první. OpenRouter zůstává druhý (je to levná pojistka pro případ,
-// že NVIDIA spadne), ale v době vyčerpaných 50/50 je to jen rychlý 429, který
-// se přeskočí. `SONGCRAFT_LLM_PROVIDERS` přepíše pořadí i v tomto souboru.
+// Proto NVIDIA první v TOOL řetězci (Gemini nástroje nemá —
+// `geminiChat()` je pryč od 99717f7 a sdílený klient neumí
+// function calling). OpenRouter zůstává druhý (je to levná pojistka
+// pro případ, že NVIDIA spadne), ale v době vyčerpaných 50/50 je to
+// jen rychlý 429, který se přeskočí. `SONGCRAFT_LLM_PROVIDERS`
+// přepíše pořadí i v tomto souboru.
 //
-// `gemini` v tool řetězci NENÍ a to je záměr: `geminiChat()` (Gemini-native
-// `functionDeclarations`) je pryč a nahrazuje ho sdílený klient, který neumí
-// nástroje. Pro text Gemini zůstává dostupný — `llmText()` ho volá přes
-// `_shared/llm.ts`, kde je poslední v záchranném řetězci a jen když existuje klíč.
+// TEXT bez nástrojů jde přes `_shared/llm.ts`, kde je Gemini
+// první v řetězci — viz `llmText()` dole.
 const PROVIDERS: ProviderCfg[] = [
   {
     id: "nvidia",
@@ -575,9 +576,10 @@ const PROVIDERS: ProviderCfg[] = [
 
 /**
  * Text bez nástrojů jde přes SDÍLENÝ klient (`_shared/llm.ts`), ne přes
- * lokální `PROVIDERS`. Důvod: jen sdílený klient umí Gemini, a to jako poslední
- * záchradu, když existuje klíč. Duplikovat Gemini tělo sem znovu by vrátilo
- * přesně to, co `_shared/llm.ts` vznikl zrušit.
+ * lokální `PROVIDERS`. Důvod: jen sdílený klient umí Gemini — prvního
+ * v řetězci (živé srovnání 2026-10-05, viz `_shared/llm.ts`).
+ * Duplikovat Gemini tělo sem znovu by vrátilo přesně to, co
+ * `_shared/llm.ts` vznikl zrušit.
  */
 async function llmText(system: string, msgs: LlmMessage[]): Promise<LlmResult> {
   const messages = msgs.flatMap((msg) =>
