@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
-import { hasLlmKey, LlmError, llmComplete } from "../_shared/llm.ts";
+import { hasLlmKey, llmComplete, llmFailureMessage } from "../_shared/llm.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -73,8 +73,11 @@ Deno.serve(async (request) => {
     });
     text = result.text;
   } catch (error) {
-    const status = error instanceof LlmError ? error.status : 502;
-    return json({ error: "AI popisování teď neodpovídá. Zkus to za chvíli." }, status === 429 ? 429 : 502);
+    const failure = llmFailureMessage(error, {
+      unavailable: "AI popisování teď neodpovídá. Zkus to za chvíli.",
+      throttled: "AI poskytovatele teď odmítají požadavek. Zkus to později.",
+    });
+    return json({ error: failure.message }, failure.status);
   }
   text = clip(text, 5000).replace(/^```[a-z]*\n?|```$/g, "").trim();
   if (!text) return json({ error: "AI nevrátila text. Zkus to znovu." }, 502);

@@ -7,7 +7,7 @@ import {
   isAllowedPrivateUser,
   privateAccessMessage,
 } from "../_shared/access.ts";
-import { llmComplete } from "../_shared/llm.ts";
+import { classifyRateLimit, isExhausted, llmComplete } from "../_shared/llm.ts";
 import { describeRecipe, planMotion, visionProvider } from "./motion-recipe.ts";
 
 const cors = {
@@ -99,7 +99,13 @@ type ProviderCfg = {
     msgs: LlmMessage[],
     toolDefs: unknown[],
     withTools: boolean,
-    opts: { maxTokens: number; reasoningCost: number; extraBody?: Record<string, unknown> },
+    opts: {
+      maxTokens: number;
+      reasoningCost: number;
+      extraBody?: Record<string, unknown>;
+      /** Jméno poskytovatele — hlídá denní strop `:free` přes `classifyRateLimit`. */
+      providerId: string;
+    },
   ) => Promise<LlmResult>;
 };
 
@@ -396,8 +402,17 @@ async function ask(
     msgs,
     toolDefs,
     withTools,
-    { maxTokens: AGENT_MAX_TOKENS, reasoningCost: provider.reasoningCost, extraBody: provider.extraBody },
+    { maxTokens: AGENT_MAX_TOKENS, reasoningCost: provider.reasoningCost, extraBody: provider.extraBody, providerId: provider.id },
   ).catch((error) => {
+    // `ProviderHttpError` musí přežít — `llm()` podle jeho typu rozhoduje, jestli
+    // přeskočí zbytek poskytovatele (denní strop), nebo zkusí další model.
+    if (error instanceof ProviderHttpError) {
+      throw new ProviderHttpError(
+        `${provider.id}:${model} ${error.message}`,
+        error.status,
+        error.rateLimit,
+      );
+    }
     throw new Error(
       `${provider.id}:${model} ${
         error instanceof Error ? error.message.slice(0, 160) : String(error)
@@ -599,6 +614,13 @@ async function llm(
       failures.push(`${provider.id}:no-key`);
       continue;
     }
+    // Stejná ochrana jako v `_shared/llm.ts`: denní strop `:free` je přeskočen
+    // rovnou, přechodný limit na minutu ne. Bez toho by nástrojový požadavek
+    // prošel 5× 429 na vyčerpaném klíči, než dojde k záchrannému.
+    if (isExhausted(provider.id)) {
+      failures.push(`${provider.id}: denní limit vyčerpán (přeskočeno do resetu)`);
+      continue;
+    }
     for (const model of provider.models) {
       if (deadline - Date.now() <= 2_000) {
         failures.push(`${provider.id}:${model}: vypršel společný časový limit`);
@@ -617,10 +639,26 @@ async function llm(
         return { ...result, provider: provider.id, model };
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error));
+        if (error instanceof ProviderHttpError && error.rateLimit === "daily-cap") {
+          failures.push(`${provider.id}: denní limit, další modely přeskočeny`);
+          break;
+        }
       }
     }
   }
   throw new Error(`Všichni LLM poskytovatelé selhali. ${failures.join(" | ")}`);
+}
+
+/** HTTP selhání, které nese stav a (u 429) způsob omezení poskytovatele. */
+class ProviderHttpError extends Error {
+  readonly status: number;
+  readonly rateLimit: "daily-cap" | "transient" | null;
+  constructor(message: string, status: number, rateLimit: "daily-cap" | "transient" | null) {
+    super(message);
+    this.name = "ProviderHttpError";
+    this.status = status;
+    this.rateLimit = rateLimit;
+  }
 }
 
 async function openaiCompatibleChat(
@@ -631,7 +669,7 @@ async function openaiCompatibleChat(
   msgs: LlmMessage[],
   toolDefs: unknown[],
   withTools: boolean,
-  opts: { maxTokens: number; reasoningCost: number; extraBody?: Record<string, unknown> },
+  opts: { maxTokens: number; reasoningCost: number; extraBody?: Record<string, unknown>; providerId: string },
 ): Promise<LlmResult> {
   const messages: Array<Record<string, unknown>> = [{
     role: "system",
@@ -654,7 +692,7 @@ async function openaiCompatibleChat(
   // `maxTokens` je rozpočet ODPOVĚDI. Reasoning si bere navíc, jinak u
   // reasoning modelů vytlačí odpověď a vrátí se `content: null`.
   const budget = Math.max(256, opts.maxTokens + opts.reasoningCost);
-  let parsed = await postChat(base, key, model, messages, tools, budget, opts.extraBody);
+  let parsed = await postChat(base, key, model, messages, tools, budget, opts.providerId, opts.extraBody);
   let finish = parsed.finish;
   let message = parsed.message;
 
@@ -667,7 +705,7 @@ async function openaiCompatibleChat(
     !message.content && !message.tool_calls?.length && finish === "length" &&
     budget < 4_000
   ) {
-    parsed = await postChat(base, key, model, messages, tools, budget * 2, opts.extraBody);
+    parsed = await postChat(base, key, model, messages, tools, budget * 2, opts.providerId, opts.extraBody);
     finish = parsed.finish;
     message = parsed.message;
   }
@@ -716,6 +754,7 @@ async function postChat(
   messages: Array<Record<string, unknown>>,
   tools: unknown,
   maxTokens: number,
+  providerId: string,
   extraBody?: Record<string, unknown>,
 ): Promise<{ message: OpenAiMessage; finish: string }> {
   const response = await fetch(`${base}/chat/completions`, {
@@ -735,8 +774,26 @@ async function postChat(
     signal: AbortSignal.timeout(CHAIN_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new Error(
-      `HTTP ${response.status} ${(await response.text()).slice(0, 160)}`,
+    // Tělo se čte kvůli rozpoznání DENNÍHO stropu, ne proto, že by se vracelo
+    // do odpovědi. Klíče ani hlavičky limitu do hlášení nejdou.
+    let snippet = "";
+    try {
+      snippet = (await response.text()).slice(0, 300);
+    } catch {
+      snippet = "";
+    }
+    const rateLimit = classifyRateLimit(
+      providerId,
+      response.status,
+      response.headers.get("x-ratelimit-reset"),
+      snippet,
+    );
+    throw new ProviderHttpError(
+      rateLimit === "daily-cap"
+        ? `${providerId}: HTTP ${response.status} denní limit free modelů vyčerpán`
+        : `${providerId}: HTTP ${response.status} ${snippet}`.slice(0, 200),
+      response.status,
+      rateLimit,
     );
   }
   const data = await response.json() as {

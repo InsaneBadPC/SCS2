@@ -39,6 +39,14 @@ Deno.serve(async (request) => {
     ["SUPABASE_SERVICE_ROLE_KEY / SONGCRAFT_SERVICE_ROLE_KEY", serviceKey],
   ].filter((entry) => !entry[1]).map(([name]) => name as string);
   if (missing.length) return json({ error: `YouTube OAuth není nakonfigurované. Chybí na Supabase: ${missing.join(", ")}.`, missing }, 503);
+  // `missing` právě ověřilo všech pět hodnot, ale TypeScript se přes
+  // `Array.filter` na pole nedokáže propsat směrem ke `string | undefined`.
+  // Tohle je tedy kontrola PRO TYPY — za běhu je to tatáž podmínka, kterou už
+  // odsudila větev výš, takže se na ni nikdy nesplní. Bez ní tahle funkce
+  // nepřešla `deno check` (jediná ze 18, která neprošla).
+  if (!url || !anonKey || !serviceKey || !clientId || !redirectUri) {
+    return json({ error: "YouTube OAuth není nakonfigurované." }, 503);
+  }
   if (!authorization) return json({ error: "Chybí přihlášení." }, 401);
 
   const auth = createClient(url, anonKey, { global: { headers: { Authorization: authorization } } });

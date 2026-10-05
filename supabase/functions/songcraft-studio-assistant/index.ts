@@ -1,7 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { isAllowedPrivateUser, privateAccessMessage } from "../_shared/access.ts";
-import { hasLlmKey, LlmError, llmComplete, type LlmMessage } from "../_shared/llm.ts";
+import { hasLlmKey, llmComplete, llmFailureMessage, type LlmMessage } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -92,8 +92,11 @@ Deno.serve(async (request) => {
     });
     answer = result.text;
   } catch (error) {
-    const status = error instanceof LlmError ? error.status : 502;
-    return json({ error: "AI asistent teď neodpovídá. Zkus to za chvíli." }, status === 429 ? 429 : 502);
+    const failure = llmFailureMessage(error, {
+      unavailable: "AI asistent teď neodpovídá. Zkus to za chvíli.",
+      throttled: "AI poskytovatele teď odmítají požadavek. Zkus to později.",
+    });
+    return json({ error: failure.message }, failure.status);
   }
   answer = clip(answer, 6_000);
   if (!answer) return json({ error: "Asistent nevrátil textovou odpověď." }, 502);
