@@ -35,10 +35,36 @@ Tento záznam obsahuje výsledky hermetic kontrol, živých E2E testů a stav ro
 - verze se propíše i do `package.json` před `expo prebuild`, takže tag release, Android `versionName` a `Constants.expoConfig.version` (Nastavení) sedí — jinak by si updater nabízel verzi, kterou už aplikace má
 - `versionCode` se počítá jako maximum posledního vydání + 1 (Android nižší verci nepřijme)
 - podepisování: `scripts/configure-android-signing.mjs` po prebuildu vloží `release` do existujícího `signingConfigs` bloku a přepojí `release` buildType z debug klíče runnera (debug klíč se mezi buildy mění → aktualizace nebyly proveditelné)
-- klíč pouze v GitHub Secrets (`CI_KEYSTORE`, `CI_KEYSTORE_PASS`, `CI_KEY_ALIAS`), lokální záloha mimo repozitář
-- ověřeno: `app-v2.9.3` (versionCode 20903, 49 MB) podepsán certifikátem `CN=SongCraft Studio, OU=Release` se SHA-256 `97:95:BA:…:9D` (shoduje s lokálním keystore)
+- klíč pouze v GitHub Secrets (`CI_KEYSTORE_PASS`, `CI_KEY_ALIAS`) a base64 klíče v `CI_KEYSTORE` **nebo** `CI_KEYSTORE_B64` — workflow čte `secrets.CI_KEYSTORE_B64 || secrets.CI_KEYSTORE`, takže jsou správná oba názvy, ale **nikdy oba současně s různými hodnotami** (skript pak fail-closed spadne). Alias je `CI_KEY_ALIAS`, ne `CI_KEYSTORE_ALIAS`.
+- ~~ověřeno: `app-v2.9.3` (versionCode 20903, 49 MB) podepsán certifikátem `CN=SongCraft Studio, OU=Release` se SHA-256 `97:95:BA:…:9D` (shoduje s lokálním keystore)~~ — **tvrzení neplatí, opraveno 5. 10. 2026 níže**
 - updater v aplikaci: banner při startu (s přeskočením verze) + ruční kontrola v Nastavení, throttle 30 min s cache (GitHub API bez tokenu má 60 req/h na IP)
 - **jednorázový krok pro uživatele:** staré APK je podepsané jiným klíčem, takže je nutné starou aplikaci odinstalovat a 2.9.3 nainstalovat ručně; další aktualizace už jdou přes aplikaci
+
+### Oprava 5. 10. 2026 — podepisování nikdy nebylo ověřeno, `app-v3.0.8` je debug klíč
+
+Rozhodující oprava předchozího odstavce. Závěr „ověřeno … shoduje s lokálním
+keystore" byl **nepravdivý** a právě on držel celý updater v nejistotě:
+
+- release `app-v2.9.3` **neexistuje** — repo má jediné release, `app-v3.0.8`, a **nul git tagů**
+- **žádný keystore nikde nebyl**: prázdný průchod celým filesystémem na `*.jks` / `*.keystore` /
+  `*.p12` / `*.pfx` vrátil 0 hitů, `~/.android/` je prázdná (chybí i `debug.keystore`),
+  v git historii žádný `.jks` nikdy nebyl přidán, `SCS2-secrets/` obsahoval jen `Supabase.txt`
+- jediné existující APK, `app-v3.0.8` (50 797 797 B), je podepsané **debug klíčem**, ne release klíčem.
+  Podpisový blok (v2, id `0x7109871a`) dává certifikát:
+  - `CN=Android Debug, OU=Android, O=Unknown, L=Unknown, ST=Unknown, C=US`
+  - serial `232eae62`, platnost **2013-12-31 → 2052-04-30**, `SHA1withRSA`, RSA **2048**
+  - SHA-256 `FA:C6:17:45:DC:09:03:78:6F:B9:ED:E6:2A:96:2B:39:9F:73:48:F0:BB:6F:89:9B:83:32:66:75:91:03:3B:9C`
+
+Tenhle klíč nepatří nikomu v tomhle repozitáři a není dostupný — je to debug keystore
+runneru, který se mezi buildy mění. **Důsledek: „aplikace se aktualizuje sama" nikdy
+nebylo prokázáno a před 5. 10. 2026 to neplatilo vůbec.**
+
+- nový release klíč byl 5. 10. 2026 vygenerován znovu a uložen **mimo repozitář** do
+  `SCS2-secrets/songcraft-release.jks` (JKS, RSA 4096, alias `songcraft`, platnost 100 let,
+  3 925 B); heslo je v `SCS2-secrets/Keystore.txt` a v GitHub Secrets
+- **kterýkoliv přechod na tohle APK vyžaduje jednorázovou ruční instalaci** (odinstalovat
+  starou app, nainstalovat znovu). Od toho prvního ručního kroku fungují další aktualizace
+  přes aplikaci, protože od té doby všechny buildy používají stejný klíč.
 
 ## Odstranění veřejných videí
 

@@ -343,8 +343,8 @@ Další fakta:
 - `versionCode` = max předchozího vydání + 1. **Staré APK je podepsané jiným klíčem**,
   proto je nutné před 2.9.3 starou app odinstalovat a nainstalovat ručně.
 - Podepisování: `scripts/configure-android-signing.mjs` po prebuildu přepojí `release`
-  buildType z debug klíče runnera na `CI_KEYSTORE` (jinak se debug klíč mezi buildu mění
-  a update nejsou proveditelné). Klíč jen v GitHub Secrets.
+  buildType z debug klíče runnera na `CI_KEYSTORE` / `CI_KEYSTORE_B64` (jinak se debug
+  klíč mezi buildu mění a update nejsou proveditelné). Klíč jen v GitHub Secrets.
 
 ### Stav repozitáře k 28. 9. 2026 (ověřeno přes API)
 
@@ -556,17 +556,55 @@ Pushnutí do main bez kroku 3 výše je v podstatě zbytečná práce.
 
 APK je podepsané schématem **v2/v3**, takže **nemá** `META-INF/*.RSA` –
 `unzip -p app-release.apk META-INF/*.RSA` vrátí prázdné a `keytool -printcert`
-taky ne. Bez `apksigner` z Android SDK nelze certifikát vytaženou porovnat
-(python parser APK Signing Blocku selhal i na v2). Jediná spolehlivá kontrola
-je, že uživatel otevře aplikaci a aktualizace se mu nabídne.
+taky ne. `apksigner` z Android SDK zde není, ale **nejde o překážku**: podpisový
+blok jde rozebrat ručně a jeho struktura je jednoznačná.
+
+Blok leží těsně před centrálním adresářem ZIPu a vypadá takto
+(`--` = 8 bajtů `size_of_block`):
+
+```
+[S][ID-value páry …][S]["APK Sig Block 42"]   ← 16 B magika, končí na cd_offset-1
+```
+
+`cd_offset` je z EOCD, takže **offset bloku se neukládá, ale odvodí**:
+
+```python
+magic_at = cd_offset - 16            # musí být b"APK Sig Block 42"
+size     = u64le(magic_at - 8)       # druhé pole [S] — 16376 u app-v3.0.8
+start    = cd_offset - size - 8      # pozice prvního [S]
+```
+
+Páry se čtou od `start + 8`: `u64` délka, `u32` ID, hodnota. Schéma v2 je
+`0x7109871a`, v3 `0xf05368c0`. Hodnota v2 bloku je posloupnost signerů
+(délkově předepsané), z nichž 3. člen je posloupnost **certifikátů** — každý
+`u32` délka + DER. Ten DER ulož do `.der` a spusť `keytool -printcert -file cert.der`.
+
+Pak porovnávej **SHA-256 DER certifikátu**, ne délku bloku:
+
+```
+app-v3.0.8  SHA256(DER) = fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c
+                        CN=Android Debug, OU=Android, O=Unknown, …  (debug klíč runnera)
+```
+
+Stejný klíč ⇒ **stejný SHA-256**. To je jediná spolehlivá kontrola; odhad
+„dlouhý/krátký úsek" dole je jen vodítka.
 
 ### Podepisování
 - `build-apk.yml` **musí** volat `scripts/configure-android-signing.mjs` a
-  workflow musí mít `CI_KEYSTORE` (base64 JKS), `CI_KEYSTORE_PASS`, `CI_KEY_ALIAS`.
+  workflow musí mít `CI_KEYSTORE_PASS` a `CI_KEY_ALIAS` (= `songcraft`, **ne**
+  `CI_KEYSTORE_ALIAS` — tohle jméno nikdo nečte).
+  Base64 klíče jde pod **`CI_KEYSTORE` i `CI_KEYSTORE_B64`**: workflow má
+  `secrets.CI_KEYSTORE_B64 || secrets.CI_KEYSTORE`, takže v UI GitHubu je
+  správný oba. **Patrně nastav jen jeden z nich** — když jsou oba a hodnoty se
+  po normalizaci bílých znaků liší, skript fail-closed spadne a release build
+  nevyjde vůbec.
   Bez toho jde ven APK podepsané debug klíčem runnera, který se mezi buildu mění
   a **aktualizaci nelze nainstalovat**.
 - Starší buildy v temney-agent podepisovací krok neměly. Jejich klíč neexistuje,
   takže přechod 3.0.1 → 3.0.2 vyžaduje **odinstalovat** a instalovat ručně.
+  Totéž platí pro `app-v3.0.8` (5. 10. 2026 potvrzeno: je podepsané `CN=Android Debug`).
+  Nový release klíč byl vygenerován 5. 10. 2026 a uložen mimo repozitář;
+  **první APK s ním je jediný, který musí uživatel nainstalovat ručně.**
 - `versionCode` = `major*10000 + minor*100 + patch`. 3.0.1 = 30001, 3.0.7 = 30007.
   Android odmítne aktualizaci, pokud je versionCode menší nebo stejný.
 - Ověření, že dva APK mají stejný klíč: porovnat podpisové bloky. V APK je
