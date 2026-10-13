@@ -8,23 +8,23 @@ import { supabase } from "@/lib/supabase";
  * Zapomenute heslo - spojka mezi resetovacim e-mailem a obrazovkou.
  *
  * Supabase posle na `redirectTo` tokeny DVEMA zpuisoby:
- *   - implicit (vychozi `flowType` v @supabase/supabase-js v2):
- *     `songcraftstudio://reset-password#access_token=..&refresh_token=..&type=recovery`
- *   - PKCE (kdyby se klient nastavil na `flowType: 'pkce'` nebo po behu ve webu):
- *     `songcraftstudio://reset-password?code=..`
- *
- * Oboji parsuje tento modul primo z `expo-linking`, protoze expo-router bere
- * z deep linku JENOM cestu a fragment s tokeny zahazuje.
- *
- * Zadna hlaska z Supabase ani z URL se nikdy neloguje - token by v logu byl
- * stejne tak citlivy jako heslo. Uzivatel vidi jen fixni ceske vety.
- */
-
-/** Cesta, kterou musi deep link resolver v `app/_layout.tsx` najit. */
-export const RESET_LINK_ROUTE = "reset-password";
-
-/** Schema z `app.config.ts` (`env.scheme`), stejne jako `app/auth.tsx`. */
-export const RESET_LINK_URI = `songcraftstudio://${RESET_LINK_ROUTE}`;
+*   - implicit (vychozi `flowType` v @supabase/supabase-js v2):
+   *     `scs2://reset-password#access_token=..&refresh_token=..&type=recovery`
+   *   - PKCE (kdyby se klient nastavil na `flowType: 'pkce'` nebo po behu ve webu):
+   *     `scs2://reset-password?code=..`
+   *
+   * Oboji parsuje tento modul primo z `expo-linking`, protoze expo-router bere
+   * z deep linku JENOM cestu a fragment s tokeny zahazuje.
+   *
+   * Zadna hlaska z Supabase ani z URL se nikdy neloguje - token by v logu byl
+   * stejne tak citlivy jako heslo. Uzivatel vidi jen fixni ceske vety.
+   */
+ 
+ /** Cesta, kterou musi deep link resolver v `app/_layout.tsx` najit. */
+ export const RESET_LINK_ROUTE = "reset-password";
+ 
+ /** Schema z `app.config.ts` (`env.scheme`), stejne jako `app/auth.tsx`. */
+ export const RESET_LINK_URI = `scs2://${RESET_LINK_ROUTE}`;
 
 /**
  * Dolni mez delky hesla. Supabase sam minimum 6 odmita, tady je vetsi, aby

@@ -4,17 +4,17 @@ import { SUPABASE_URL, supabase } from "@/lib/supabase";
  * Kam se má `openAuthSessionAsync` vrátit po schválení na Google.
  *
  * Výchozí hodnota MUSÍ být deep link na existující routu. `app/settings/`
- * v repu neexistuje, takže `songcraftstudio://settings/youtube` se parsuje
+ * v repu neexistuje, takže `scs2://settings/youtube` se parsuje
  * jako cesta `settings/youtube` a expo-router skončí na `+not-found`.
- * `songcraftstudio://settings` (scheme z `app.config.ts`, host jako první
+ * `scs2://settings` (scheme z `app.config.ts`, host jako první
  * segment cesty) odpovídá routě `/settings` z `app/(tabs)/settings.tsx` —
- * stejný tvar jako `songcraftstudio://reset-password` v `lib/reset-password.ts`.
+ * stejný tvar jako `scs2://reset-password` v `lib/reset-password.ts`.
  *
  * Edge Function `youtube-oauth-callback` čte `SONGCRAFT_APP_REDIRECT_URL` a
  * musí dostat TUTÉŽ hodnotu, jinak se OAuth tok po návratu neuloží.
  * Přepisuje se to přes `EXPO_PUBLIC_YOUTUBE_OAUTH_REDIRECT_URL`.
  */
-export const YOUTUBE_OAUTH_REDIRECT_URL = process.env.EXPO_PUBLIC_YOUTUBE_OAUTH_REDIRECT_URL || "songcraftstudio://settings";
+export const YOUTUBE_OAUTH_REDIRECT_URL = process.env.EXPO_PUBLIC_YOUTUBE_OAUTH_REDIRECT_URL || "scs2://settings";
 
 /**
  * Redirect URI, které se musí PŘESNĚ zapsat do *Authorized redirect URIs*

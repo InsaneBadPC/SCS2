@@ -1,8 +1,8 @@
-# SongCraft Studio — návrh mobilního rozhraní
+# SCS2 — návrh mobilního rozhraní
 
 ## Záměr produktu
 
-SongCraft Studio je soukromé pracovní prostředí autora a hudebníka. Spojuje rozepsané texty, promyšlené podklady pro generátory hudby, přebaly a více exportovaných zvukových verzí do jedné struktury **album → skladba → verze**. Aplikace je určena především pro rychlou práci v mobilním portrétním zobrazení, stejný obsah je však dostupný i ve webovém rozhraní a je synchronizován v cloudu.
+SCS2 je soukromé pracovní prostředí autora a hudebníka. Spojuje rozepsané texty, promyšlené podklady pro generátory hudby, přebaly a více exportovaných zvukových verzí do jedné struktury **album → skladba → verze**. Aplikace je určena především pro rychlou práci v mobilním portrétním zobrazení, stejný obsah je však dostupný i ve webovém rozhraní a je synchronizován v cloudu.
 
 ## Principy rozhraní
 

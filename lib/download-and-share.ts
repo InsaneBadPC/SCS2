@@ -12,7 +12,7 @@ function absoluteUrl(url: string) {
 }
 
 function safeName(fileName: string) {
-  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_") || "songcraft-download";
+  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_") || "scs2-download";
 }
 
 export async function downloadOrShareFile(url: string, fileName: string, mimeType: string, title: string) {
@@ -44,7 +44,7 @@ export async function saveFinishedMp3(url: string, fileName: string) {
   return downloadOrShareFile(url, fileName, "audio/mpeg", "Uložit nebo sdílet hotovou MP3");
 }
 
-const VIDEO_FOLDER_KEY = "songcraft.videoFolderUri";
+const VIDEO_FOLDER_KEY = "scs2.videoFolderUri";
 
 async function ensureVideoFolder(): Promise<string | null> {
   const saf = FileSystem.StorageAccessFramework;
@@ -55,8 +55,8 @@ async function ensureVideoFolder(): Promise<string | null> {
   const granted = await saf.requestDirectoryPermissionsAsync("content://com.android.externalstorage.documents/root/primary%3ADownload");
   if (!granted.granted) return null;
   const entries = await saf.readDirectoryAsync(granted.directoryUri);
-  let folderUri = entries.find((uri) => uri.toLowerCase().endsWith("/songcraft studio"));
-  if (!folderUri) folderUri = await saf.makeDirectoryAsync(granted.directoryUri, "SongCraft Studio");
+  let folderUri = entries.find((uri) => uri.toLowerCase().endsWith("/scs2"));
+  if (!folderUri) folderUri = await saf.makeDirectoryAsync(granted.directoryUri, "SCS2");
   await AsyncStorage.setItem(VIDEO_FOLDER_KEY, folderUri).catch(() => {});
   return folderUri;
 }

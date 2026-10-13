@@ -2,13 +2,13 @@
 
 ## Webový náhled
 
-Dne 20. srpna 2026 byl v prohlížeči ověřen náhled na kořenové URL webové aplikace. Zobrazilo se jméno **SongCraft Studio**, uzamčená přihlašovací obrazovka a spodní navigace pro Přehled, Texty, Alba, Knihovnu a Nastavení. Uzamčený stav je očekávaný: cloudová data jsou dostupná až po autentizaci vlastníka.
+Dne 20. srpna 2026 byl v prohlížeči ověřen náhled na kořenové URL webové aplikace. Zobrazilo se jméno **SCS2**, uzamčená přihlašovací obrazovka a spodní navigace pro Přehled, Texty, Alba, Knihovnu a Nastavení. Uzamčený stav je očekávaný: cloudová data jsou dostupná až po autentizaci vlastníka.
 
 Před ověřením byla upravena konfigurace webového běhu. Statický exportní režim byl odstraněn z vývojové konfigurace a souběžný proces již neukončuje server při korektním dokončení jedné pomocné úlohy Metra.
 
 ## Automatická kontrola
 
-Byly úspěšně spuštěny příkazy `pnpm check`, `pnpm test` a `pnpm lint`. Vitest ověřil datový model SongCraft Studio ve dvou testech; původní test odhlášení zůstává záměrně přeskočený, protože vyžaduje samostatný autentizační kontext šablony.
+Byly úspěšně spuštěny příkazy `pnpm check`, `pnpm test` a `pnpm lint`. Vitest ověřil datový model SCS2 ve dvou testech; původní test odhlášení zůstává záměrně přeskočený, protože vyžaduje samostatný autentizační kontext šablony.
 
 ## Integrovaný MP3 přehrávač
 
@@ -32,7 +32,7 @@ Výběr MP3 v detailu skladby již nevede k okamžitému uložení neurčitě po
 
 ## Stabilní provoz bez externích účtů
 
-Nedokončené propojení s Google Drivem bylo zrušeno. SongCraft Studio dále používá stávající zabezpečený společný katalog aplikace, takže data zůstávají synchronizovaná mezi mobilním a webovým rozhraním bez přidávání účtu, API klíče nebo dalšího nastavení uživatele. Hromadný import nyní vytváří postupně číslované verze `V1`, `V2` a další. Obrazovka YouTube exportu zpřístupňuje finální verze k vyzvednutí spolu s přebalem a názvem pro publikaci. Závěrečné spuštění `pnpm check`, `pnpm test` a `pnpm lint` proběhlo úspěšně.
+Nedokončené propojení s Google Drivem bylo zrušeno. SCS2 dále používá stávající zabezpečený společný katalog aplikace, takže data zůstávají synchronizovaná mezi mobilním a webovým rozhraním bez přidávání účtu, API klíče nebo dalšího nastavení uživatele. Hromadný import nyní vytváří postupně číslované verze `V1`, `V2` a další. Obrazovka YouTube exportu zpřístupňuje finální verze k vyzvednutí spolu s přebalem a názvem pro publikaci. Závěrečné spuštění `pnpm check`, `pnpm test` a `pnpm lint` proběhlo úspěšně.
 
 ## Stažení souborů a kompletní záloha
 

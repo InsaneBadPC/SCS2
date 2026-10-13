@@ -69,7 +69,7 @@ describe("klientská bezpečnost a deterministicita", () => {
 });
 
 /**
- * Regrese z 30. 9.: při sloučení songcraft-studio do temney-agent se přepsal
+ * Regrese z 30. 9.: při sloučení SCS2 do temney-agent se přepsal
  * app/(tabs)/_layout.tsx a přišlo s ním `href: null`, které tab Alba schovalo.
  * Uživatel ztratil celou sekci i možnost založit album, přitom v Repu se
  * nemažlo nic — soubor albums.tsx byl bitově stejný.

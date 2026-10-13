@@ -48,8 +48,8 @@ describe("LLM provider key", () => {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${key}`,
-          "HTTP-Referer": "https://github.com/InsaneBadPC/songcraft-studio",
-          "X-Title": "SongCraft Studio",
+          "HTTP-Referer": "https://github.com/InsaneBadPC/scs2",
+          "X-Title": "SCS2",
         },
         body: JSON.stringify({
           model: target.model,

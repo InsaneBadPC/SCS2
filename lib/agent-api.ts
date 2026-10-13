@@ -57,7 +57,7 @@ function isPendingAction(value: unknown): value is AgentPendingAction {
 }
 
 /**
- * Single client boundary for the server-side SongCraft agent. Provider keys,
+ * Single client boundary for the server-side SCS2 agent. Provider keys,
  * tool dispatch, ownership checks and confirmation policy stay in the Edge
  * Function; the app only sends bounded user text and renders typed results.
  */

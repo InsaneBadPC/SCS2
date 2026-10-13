@@ -15,7 +15,7 @@ const versionCodeOverride = Number(process.env.EXPO_ANDROID_VERSION_CODE);
 const versionCode = Number.isFinite(versionCodeOverride) && versionCodeOverride > 0 ? versionCodeOverride : versionCodeFromPackage;
 
 // Nezávislý identifikátor aplikace pro externí Android/iOS sestavení.
-const rawBundleId = "com.temney.songcraftstudio";
+const rawBundleId = "com.temney.scs2";
 const bundleId =
   rawBundleId
     .replace(/[-_]/g, ".") // Replace hyphens/underscores with dots
@@ -29,13 +29,13 @@ const bundleId =
       // Prefix with 'x' if segment starts with a digit
       return /^[a-zA-Z]/.test(segment) ? segment : "x" + segment;
     })
-    .join(".") || "com.temney.songcraftstudio";
+    .join(".") || "com.temney.scs2";
 
 const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "SCS2",
-  appSlug: "songcraft-studio",
-  scheme: "songcraftstudio",
+  appSlug: "scs2",
+  scheme: "scs2",
   iosBundleId: bundleId,
   androidPackage: bundleId,
 };
@@ -49,6 +49,11 @@ const config: ExpoConfig = {
   scheme: env.scheme,
   userInterfaceStyle: "dark",
   newArchEnabled: true,
+  extra: {
+    eas: {
+      projectId: "1b5c88b7-1ae9-4660-ae94-c7d3d945a45e",
+    },
+  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: env.iosBundleId,
@@ -137,8 +142,8 @@ const config: ExpoConfig = {
     ],
   ],
   experiments: {
-    // GitHub Pages serves this repository below /songcraft-studio.
-    baseUrl: "/songcraft-studio",
+    // GitHub Pages serves this repository below /scs2.
+    baseUrl: "/scs2",
     typedRoutes: true,
     reactCompiler: true,
   },

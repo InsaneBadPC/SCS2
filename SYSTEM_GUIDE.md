@@ -1,8 +1,8 @@
-# SongCraft Studio — systémový návrh a provozní průvodce
+# SCS2 — systémový návrh a provozní průvodce
 
 ## Účel systému
 
-**SongCraft Studio** je soukromé tvůrčí prostředí pro autora, který potřebuje udržet pohromadě vznikající texty, prompty pro hudební generátory, obaly skladeb a různé audio verze. Aplikace funguje jako nativní Android klient i jako webové UI nad stejnými daty. Namísto volných složek v úložišti používá přesný model **album → textový dokument → hotová skladba → MP3 verze**. Tento model zabraňuje tomu, aby se přebal, text a audio soubor po několika iteracích rozešly.
+**SCS2** je soukromé tvůrčí prostředí pro autora, který potřebuje udržet pohromadě vznikající texty, prompty pro hudební generátory, obaly skladeb a různé audio verze. Aplikace funguje jako nativní Android klient i jako webové UI nad stejnými daty. Namísto volných složek v úložišti používá přesný model **album → textový dokument → hotová skladba → MP3 verze**. Tento model zabraňuje tomu, aby se přebal, text a audio soubor po několika iteracích rozešly.
 
 > **Zásada bezpečnosti obsahu:** původní nahraná MP3 není při práci s ID3 tagy přepisována. Export tagované verze vytváří novou kopii, kterou lze použít pro publikování.
 

@@ -7,12 +7,12 @@ const cors = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
-// Výchozí hodnota MUSÍ být existující routa. `songcraftstudio://settings/youtube`
+// Výchozí hodnota MUSÍ být existující routa. `scs2://settings/youtube`
 // se v expo-routeru parsuje jako cesta `settings/youtube` a skončí na `+not-found`,
-// takže po návratu z Google by aplikace ukázala chybu. `songcraftstudio://settings`
+// takže po návratu z Google by aplikace ukázala chybu. `scs2://settings`
 // (scheme z `app.config.ts`) odpovídá routě `/settings` a je stejná hodnota jako
 // výchozí `YOUTUBE_OAUTH_REDIRECT_URL` v `lib/youtube-oauth.ts`.
-const appRedirect = Deno.env.get("SONGCRAFT_APP_REDIRECT_URL") || "songcraftstudio://settings";
+const appRedirect = Deno.env.get("SONGCRAFT_APP_REDIRECT_URL") || "scs2://settings";
 
 function redirect(status: string, extra: Record<string, string> = {}) {
   const url = new URL(appRedirect);
@@ -40,8 +40,8 @@ Deno.serve(async (request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SONGCRAFT_SUPABASE_URL");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SONGCRAFT_SERVICE_ROLE_KEY");
   const clientId = Deno.env.get("YOUTUBE_CLIENT_ID");
-  const clientSecret = Deno.env.get("YOUTUBE_CLIENT_SECRET");
-  if (!supabaseUrl || !serviceKey || !clientId || !clientSecret) return redirect("error", { reason: "not_configured" });
+  const clientSecret = Deno.env.get("YOUTUBE_CLIENT_SECRET"); // optional for Android (PKCE)
+  if (!supabaseUrl || !serviceKey || !clientId) return redirect("error", { reason: "not_configured" });
   const admin = createClient(supabaseUrl, serviceKey);
 
   const { data: stateRow, error: stateError } = await admin
@@ -66,10 +66,12 @@ Deno.serve(async (request) => {
   if (claimError || !claimed) return redirect("error", { reason: "state_already_used" });
 
   try {
+    const params = { client_id: clientId, code, code_verifier: claimed.code_verifier, grant_type: "authorization_code", redirect_uri: claimed.redirect_uri };
+    if (clientSecret) params.client_secret = clientSecret;
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, code, code_verifier: claimed.code_verifier, grant_type: "authorization_code", redirect_uri: claimed.redirect_uri }),
+      body: new URLSearchParams(params),
       signal: AbortSignal.timeout(20_000),
     });
     const token = await tokenResponse.json().catch(() => null) as { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; error_description?: string } | null;

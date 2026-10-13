@@ -301,7 +301,7 @@ const toolDefs = [
   },
   {
     name: "read_repo_file",
-    description: "Read a file from the SongCraft Studio repository.",
+    description: "Read a file from the SCS2 repository.",
     parameters: {
       type: "object",
       properties: {
@@ -314,7 +314,7 @@ const toolDefs = [
   {
     name: "read_skills",
     description:
-      "Read the SongCraft Studio skills document: architecture, ops, known breakages, verification commands. Read it before doing any repo or VM work.",
+      "Read the SCS2 skills document: architecture, ops, known breakages, verification commands. Read it before doing any repo or VM work.",
     parameters: { type: "object", properties: {} },
   },
   {
@@ -1849,7 +1849,7 @@ async function handle(request: Request): Promise<Response> {
     }, 400);
   }
   const system =
-    `Jsi Temney Agent v SongCraft Studio. Odpovídej česky. Používej nástroje, když můžeš provést konkrétní bezpečný krok. Nikdy netvrď, že se akce stala, pokud nástroj nevrátil úspěch. Veřejné akce jsou vždy pending_confirmation. Character bible: ${CHARACTER_BIBLE}. Soukromá data patří pouze ověřenému user_id ${user.id}.;
+    `Jsi Temney Agent v SCS2. Odpovídej česky. Používej nástroje, když můžeš provést konkrétní bezpečný krok. Nikdy netvrď, že se akce stala, pokud nástroj nevrátil úspěch. Veřejné akce jsou vždy pending_confirmation. Character bible: ${CHARACTER_BIBLE}. Soukromá data patří pouze ověřenému user_id ${user.id}.;
 
 VIDEO — pravidla, která nesmíš porušit:
 - Video je default make_long_video. Když uživatel řekne "udělej k téhle písně video", použij ho. Engine si sám vybere délky průchodů i přechody, takže NEPIŠ motionPrompt a NIC nevymýšlej: žádný kouř, blesky, déšť ani blikání, o co uživatel nežádal.

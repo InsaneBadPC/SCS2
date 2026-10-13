@@ -29,6 +29,7 @@
 import { mkdir, writeFile, readFile, readdir, rm, stat, statfs } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createServer } from "node:http";
 import path from "node:path";
 import { buildLoopVideo } from "./loop-engine.mjs";
 
@@ -571,6 +572,43 @@ async function tick() {
 
 await preflight();
 if (preflightOnly) process.exit(0);
+const httpPort = Number(process.env.HEALTH_PORT || 8081);
+createServer(async (req, res) => {
+  const parsed = new URL(req.url || "/", `http://localhost:${httpPort}`);
+  if (parsed.pathname === "/health" || (parsed.pathname === "/" && req.method === "GET")) {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", uptime: Math.trunc(process.uptime()), renderer: "scs2-video-renderer" }));
+    return;
+  }
+  if (parsed.pathname === "/render" && req.method === "POST") {
+    const authHeader = req.headers.authorization || "";
+    const apiKey = req.headers.apikey || "";
+    if (authHeader !== `Bearer ${key}` || apiKey !== key) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Unauthorized" }));
+      return;
+    }
+    try {
+      const body = await req.text();
+      const payload = JSON.parse(body || "{}");
+      if (!payload?.videoId) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Missing videoId" }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ accepted: true, videoId: payload.videoId, status: "queued" }));
+    } catch {
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid JSON body" }));
+    }
+    return;
+  }
+  res.writeHead(404, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "Not found" }));
+}).listen(httpPort, () => {
+  console.log(`[http] health server on :${httpPort} (scs2-renderer)`);
+});
 console.log(`Temney renderer ready; interval ${interval}ms; dashboard ${dashboardUrl} (pouze pro image_animation/full_scenes)`);
 do {
   await tick().catch((error) => console.error(error));

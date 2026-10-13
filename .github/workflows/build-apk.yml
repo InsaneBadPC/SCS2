@@ -7,7 +7,7 @@ name: Build Android APK
 # APK se nesmí vydat, dokud hermetic CI (`pnpm check` + `pnpm lint` + `pnpm test`
 # + web export) neprode `success`. `needs:` se resolvuje POUZE v rámci jednoho
 # souboru, takže gate na `ci.yml` nelze vyjádřit job závislostí — používáme
-# `workflow_run` nad workflowem `SongCraft CI` (řetězec musí být identický s
+# `workflow_run` nad workflowem `SCS2 CI` (řetězec musí být identický s
 # `name:` v ci.yml) a podmínku na `conclusion` na úrovni jobu.
 #
 # Důsledky `workflow_run`, které je nutné kompenzovat:
@@ -24,7 +24,7 @@ name: Build Android APK
 #   * `workflow_dispatch` zůstává pro ruční release.
 on:
   workflow_run:
-    workflows: ["SongCraft CI"]
+    workflows: ["SCS2 CI"]
     types: [completed]
     branches:
       - dev/ai-manager-studio
@@ -171,9 +171,9 @@ jobs:
           tag="app-v${VERSION}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$apk" --clobber
-            gh release edit "$tag" --notes-file release-notes.md --title "SongCraft Studio ${VERSION}"
+            gh release edit "$tag" --notes-file release-notes.md --title "SCS2 ${VERSION}"
           else
-            gh release create "$tag" "$apk" --title "SongCraft Studio ${VERSION}" --notes-file release-notes.md
+            gh release create "$tag" "$apk" --title "SCS2 ${VERSION}" --notes-file release-notes.md
           fi
           echo "vydáno $tag ($(du -h "$apk" | cut -f1))"
 

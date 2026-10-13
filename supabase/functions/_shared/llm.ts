@@ -1,5 +1,5 @@
 // =============================================================================
-// _shared/llm.ts — provider-neutral LLM vrstva pro SongCraft Studio
+// _shared/llm.ts — provider-neutral LLM vrstva pro SCS2
 // =============================================================================
 //
 // PROČ TENTO SOUBOR EXISTUJE
@@ -433,8 +433,8 @@ async function callProvider(
     headers.Authorization = `Bearer ${key}`;
     // OpenRouter je doporučuje pro atribuci; NVIDIA je ignoruje (a `HTTP-Referer`
     // je navíc legitimní hlavička, takže to není CORS/proxy problém).
-    headers["HTTP-Referer"] = "https://github.com/InsaneBadPC/songcraft-studio";
-    headers["X-Title"] = "SongCraft Studio";
+    headers["HTTP-Referer"] = "https://github.com/InsaneBadPC/scs2";
+    headers["X-Title"] = "SCS2";
   }
 
   /**

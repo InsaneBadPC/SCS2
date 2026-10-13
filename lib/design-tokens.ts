@@ -1,5 +1,5 @@
 /**
- * Skaly design tokenu pro SongCraft Studio.
+ * Skaly design tokenu pro SCS2.
  *
  * Barva zije v theme.config.js. Cokoliv dalsiho (rozmer, pismo, hloubka)
  * zde - aby se nepouzivalo 15 ruznych polomeru a 12 velikosti pisma.

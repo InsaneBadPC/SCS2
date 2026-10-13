@@ -1,4 +1,4 @@
-# SongCraft Studio — produkční deployment runbook
+# SCS2 — produkční deployment runbook
 
 Tento runbook neobsahuje žádné hesla, tokeny ani API klíče. Secrets se nastavují výhradně v Supabase Dashboard / GitHub Environment / Oracle Secret Manager.
 

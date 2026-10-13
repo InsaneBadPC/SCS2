@@ -7,7 +7,7 @@ on:
   # `workflow_run.event == 'push'` v podmínce jobu zabraňuje, aby fork přes PR
   # spustil build s právy repozitáře.
   workflow_run:
-    workflows: ["SongCraft CI"]
+    workflows: ["SCS2 CI"]
     types: [completed]
     branches:
       - main

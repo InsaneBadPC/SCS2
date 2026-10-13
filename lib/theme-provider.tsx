@@ -10,7 +10,7 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // SongCraft Studio je vždy tmavý, nezávisle na systému.
+  // SCS2 je vždy tmavý, nezávisle na systému.
   const [colorScheme, setColorSchemeState] = useState<ColorScheme>("dark");
 
   const applyScheme = useCallback((scheme: ColorScheme) => {

@@ -1,4 +1,4 @@
-# SongCraft Studio — produkční TODO: AI hudební manažer a Oracle video pipeline
+# SCS2 — produkční TODO: AI hudební manažer a Oracle video pipeline
 
 **Stav dokumentu:** živý roadmap  
 **Cílová větev:** `dev/ai-manager-studio`  

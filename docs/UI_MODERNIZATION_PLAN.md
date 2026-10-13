@@ -1,8 +1,8 @@
-# SongCraft Studio — návrh moderního UI
+# SCS2 — návrh moderního UI
 
 ## Cíl
 
-SongCraft Studio má být rychlé autorské prostředí, ne dashboard plný technických stavů. Uživatel má na první pohled vidět:
+SCS2 má být rychlé autorské prostředí, ne dashboard plný technických stavů. Uživatel má na první pohled vidět:
 
 - co dokončit,
 - kde skončil,

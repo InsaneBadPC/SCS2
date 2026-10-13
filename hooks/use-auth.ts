@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { clearUserClientData } from "@/lib/client-session-cleanup";
 import { supabase } from "@/lib/supabase";
 
-export type SongCraftUser = {
+export type SCS2User = {
   id: string;
   openId: string;
   name: string | null;
@@ -14,13 +14,13 @@ export type SongCraftUser = {
 };
 
 export function useAuth() {
-  const [user, setUser] = useState<SongCraftUser | null>(null);
+  const [user, setUser] = useState<SCS2User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const queryClient = useQueryClient();
   const previousUserIdRef = useRef<string | null>(null);
 
-  const mapUser = useCallback((source: { id: string; email?: string | null; user_metadata?: Record<string, unknown> } | null): SongCraftUser | null => source ? {
+  const mapUser = useCallback((source: { id: string; email?: string | null; user_metadata?: Record<string, unknown> } | null): SCS2User | null => source ? {
     id: source.id,
     openId: source.id,
     name: typeof source.user_metadata?.display_name === "string" ? source.user_metadata.display_name : "Temney",

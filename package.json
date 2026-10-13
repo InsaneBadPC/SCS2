@@ -1,6 +1,7 @@
 {
-  "name": "songcraft-studio",
+  "name": "scs2",
   "version": "3.0.8",
+  "description": "SCS2 — private songwriting studio",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {

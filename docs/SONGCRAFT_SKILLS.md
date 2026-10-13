@@ -1,4 +1,4 @@
-# SongCraft Studio — skills pro práci s projektem
+# SCS2 — skills pro práci s projektem
 
 Vzniklo z reálného průzkumu repozitáře a **běžícího ověření** na Termuxu. Každý skill obsahuje
 pouze to, co bylo skutečně ověřeno spuštěním, nebo přes `deno check` / CI log / dotaz do DB.
@@ -764,7 +764,7 @@ věci, protože kopie na SD kartě schovaný tab Alba pořád má.
 ## 12. Kde jsou staré sessions a co z nich plyne
 
 `~/.local/share/opencode/opencode.db` (39 MB, SQLite). Tabulky `session_v2` (8 sessions)
-a `session_message` (2431 zpráv). Hlavní session: **„Nastudování projektu Songcraft Studio“**
+a `session_message` (2431 zpráv). Hlavní session: **„Nastudování projektu SCS2“**
 (`ses_f27964f5fffe8g4E2j7Rge7ic7`) + 6 subagentů. Použitelné dotazy:
 
 ```sql

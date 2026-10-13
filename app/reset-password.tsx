@@ -12,7 +12,7 @@ import { OnPrimary, Radius, Space, TouchTarget, Type } from "@/lib/design-tokens
 /**
  * Nastaveni noveho hesla po resetovacim e-mailu.
  *
- * Sem se da dostat jen deep linkem `songcraftstudio://reset-password`
+ * Sem se da dostat jen deep linkem `scs2://reset-password`
  * (viz app.config.ts intentFilters a `app/_layout.tsx`), ktery sem posle
  * tokeny z e-mailu. Neni tu zalopena v zadnych zalozkách ani v nastavení -
  * bez platneho resetovacího odkazu sem běžná navigace nesmí.

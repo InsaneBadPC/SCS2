@@ -81,8 +81,8 @@ Deno.serve(async (request) => {
     const zip = new JSZip();
     const createdAt = new Date().toISOString();
     const title = selectedAlbum ? `Album ${selectedAlbum.name}` : "Kompletní knihovna";
-    zip.file("SongCraft-Studio-export.json", JSON.stringify({ exportedAt: createdAt, artist: "Temney", exportTitle: title, albums, lyrics, songs, versions }, null, 2));
-    zip.file("README.txt", `SongCraft Studio — ${title}\n\nTexty obsahují prompt pro styl, samotný text a poznámky. Skladby obsahují MP3 verze s upravenými ID3 tagy, obrázky a metadata.\n`);
+    zip.file("SCS2-export.json", JSON.stringify({ exportedAt: createdAt, artist: "Temney", exportTitle: title, albums, lyrics, songs, versions }, null, 2));
+    zip.file("README.txt", `SCS2 — ${title}\n\nTexty obsahují prompt pro styl, samotný text a poznámky. Skladby obsahují MP3 verze s upravenými ID3 tagy, obrázky a metadata.\n`);
     const addStored = async (storagePath: string | null | undefined, target: string) => {
       const path = ownedPath(user.id, storagePath);
       if (!path) return;
@@ -96,7 +96,7 @@ Deno.serve(async (request) => {
     for (const song of songs) { const album = allAlbums.find((entry) => entry.id === song.album_id); const folder = `Skladby/${safe(album?.name ?? "Single")}/${safe(song.title)}-${song.id}`; zip.file(`${folder}/text-pisne.txt`, song.lyrics ?? ""); zip.file(`${folder}/prompt-stylu.txt`, song.style_prompt ?? ""); zip.file(`${folder}/poznamky.txt`, song.notes ?? ""); zip.file(`${folder}/metadata.json`, JSON.stringify(song, null, 2)); await addStored(song.cover_path ?? album?.cover_path, `${folder}/obrazek${ext(song.cover_path ?? album?.cover_path, ".jpg")}`); for (const version of versions.filter((entry) => entry.song_id === song.id)) { await addStored(version.tagged_storage_path ?? version.storage_path, `${folder}/MP3/${safe(version.original_file_name)}`); zip.file(`${folder}/MP3/${safe(version.label)}-metadata.json`, JSON.stringify(version, null, 2)); } }
     const archive = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });
     if (archive.byteLength <= 0 || archive.byteLength > MAX_ARCHIVE_BYTES) return json({ error: "Export překročil limit 300 MB. Exportuj menší album." }, 413);
-    const fileName = selectedAlbum ? `SongCraft-Studio-album-${safe(selectedAlbum.name)}-${createdAt.slice(0, 10)}.zip` : `SongCraft-Studio-kompletni-knihovna-${createdAt.slice(0, 10)}.zip`;
+    const fileName = selectedAlbum ? `SCS2-album-${safe(selectedAlbum.name)}-${createdAt.slice(0, 10)}.zip` : `SCS2-kompletni-knihovna-${createdAt.slice(0, 10)}.zip`;
     const path = `${user.id}/exports/${fileName}`;
     const { error: uploadError } = await supabase.storage.from("songcraft").upload(path, archive, { contentType: "application/zip", upsert: true });
     if (uploadError) return json({ error: uploadError.message }, 400);
@@ -118,7 +118,7 @@ Deno.serve(async (request) => {
     const songs = songsResult.data ?? [];
     const albums = albumsResult.data ?? [];
     const versions = versionsResult.data ?? [];
-    const parts: string[] = [`SONGCRAFT STUDIO — SEZNAM SKLADEB`, `Interpret: Temney · Export: ${new Date().toLocaleDateString("cs-CZ")}`, ""];
+    const parts: string[] = [`SCS2 — SEZNAM SKLADEB`, `Interpret: Temney · Export: ${new Date().toLocaleDateString("cs-CZ")}`, ""];
     let counter = 0;
     const renderSong = (song: any) => {
       const chunk: string[] = [`♪ ${++counter}. ${song.title}`];

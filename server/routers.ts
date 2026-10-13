@@ -183,8 +183,8 @@ export const appRouter = router({
       const zip = new JSZip();
       const createdAt = new Date().toISOString();
       const exportTitle = selectedAlbum ? `Album ${selectedAlbum.name}` : "Kompletní knihovna";
-      zip.file("SongCraft-Studio-export.json", JSON.stringify({ exportedAt: createdAt, artist: "Temney", exportTitle, albums, documents, songs, versions }, null, 2));
-      zip.file("README.txt", `SongCraft Studio — ${exportTitle}\n\nTexty obsahují prompt pro styl, samotný text a poznámky. Skladby obsahují MP3 verze s upravenými ID3 tagy, obrázky a metadata.\n`);
+      zip.file("SCS2-export.json", JSON.stringify({ exportedAt: createdAt, artist: "Temney", exportTitle, albums, documents, songs, versions }, null, 2));
+      zip.file("README.txt", `SCS2 — ${exportTitle}\n\nTexty obsahují prompt pro styl, samotný text a poznámky. Skladby obsahují MP3 verze s upravenými ID3 tagy, obrázky a metadata.\n`);
       for (const album of albums) {
         const albumFolder = `Alba/${safeFileName(album.name)}-${album.id}`;
         await addStoredFile(zip, album.coverStorageKey, `${albumFolder}/obal${fileExtension(album.coverStorageKey ?? "", ".jpg")}`);
@@ -214,7 +214,7 @@ export const appRouter = router({
       }
       const archive = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
       if (archive.byteLength > 300 * 1024 * 1024) throw new Error("Kompletní export je větší než 300 MB. Stáhni prosím skladby po částech z YouTube exportu.");
-      const fileName = selectedAlbum ? `SongCraft-Studio-album-${safeFileName(selectedAlbum.name)}-${createdAt.slice(0, 10)}.zip` : `SongCraft-Studio-kompletni-knihovna-${createdAt.slice(0, 10)}.zip`;
+      const fileName = selectedAlbum ? `SCS2-album-${safeFileName(selectedAlbum.name)}-${createdAt.slice(0, 10)}.zip` : `SCS2-kompletni-knihovna-${createdAt.slice(0, 10)}.zip`;
       const stored = await storagePut(`songcraft/${ctx.user.id}/exports/${fileName}`, archive, "application/zip");
       return { ...stored, fileName, byteSize: archive.byteLength };
     }),

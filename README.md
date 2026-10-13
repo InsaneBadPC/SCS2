@@ -1,6 +1,6 @@
-# SongCraft Studio
+# SCS2
 
-SongCraft Studio je soukromý hudební workspace pro texty, artworky, finální MP3, AImanažera a soukromé video na Oracle VM.
+SCS2 je soukromý hudební workspace pro texty, artworky, finální MP3, AImanažera a soukromé video na Oracle VM.
 
 ## Bezpečný datový tok
 

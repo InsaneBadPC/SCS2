@@ -1,4 +1,4 @@
-# SongCraft Studio — rychlý postup
+# SCS2 — rychlý postup
 
 ## Vytvoření skladby
 

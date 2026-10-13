@@ -1,13 +1,13 @@
-# SongCraft Studio — Posvátný pracovní plán AI manažera
+# SCS2 — Posvátný pracovní plán AI manažera
 
 **Větev:** `dev/ai-manager-studio` (vše se vyvíjí zde)
-**Zásada:** Dokud nebude hotový, není hotový ani SongCraft Studio.
+**Zásada:** Dokud nebude hotový, není hotový ani SCS2.
 
 ---
 
 ## 1. Vize
 
-Přepracovat současný „čtecí“ asistent (`songcraft-studio-assistant`, read-only Gemini chat) na **plnohodnotného autonomního AI manažera („hudební manažer“)** uvnitř SongCraft Studia.
+Přepracovat současný „čtecí“ asistent (`songcraft-studio-assistant`, read-only Gemini chat) na **plnohodnotného autonomního AI manažera („hudební manažer“)** uvnitř SCS2.
 
 Agent bude:
 1. Mít přístup k databázi SongCraft (skladby, texty, alba, obrázky, videa, MP3 verze).
@@ -24,7 +24,7 @@ Bonus zásada: agent je „hudební manažer“ – nevytváří jen artefakty, 
 
 ## 2. Aktuální stav (audit, 2026-09-23)
 
-### SongCraft Studio (hlavní repo, `InsaneBadPC/songcraft-studio`)
+### SCS2 (hlavní repo, `InsaneBadPC/songcraft-studio`)
 - Expo 54 / React Native + Supabase. Větev `main` v2.9.1.
 - Supabase tabulky (Postgres, RLS, snake_case): `sc_albums`, `sc_lyrics`, `sc_songs`, `sc_audio_versions`, `sc_rhyme_words`, `sc_video_jobs`, `sc_style_prompts`.
 - Edge funkce: `songcraft-studio-assistant` (read-only), `songcraft-cover-ai`, `songcraft-imports`, `songcraft-rhymes`, `songcraft-utilities`, `songcraft-youtube` (spouští GitHub Actions render-youtube → `sc_video_jobs`).
@@ -33,7 +33,7 @@ Bonus zásada: agent je „hudební manažer“ – nevytváří jen artefakty, 
 - Testy v `tests/` (jest/tsx). Nástroj: `pnpm` + Expo + Drizzle (shema `drizzle/schema.ts` je MySQL podklad; Supabase vrstva je Postgres).
 
 ### Temney Agent prototyp (repo `songcraft-studio-temney-agent`, v3.0.1)
-To je **prototyp schématu a konektorů**, který navrhujeme integrovat do hlavního SongCraft Studia:
+To je **prototyp schématu a konektorů**, který navrhujeme integrovat do hlavního SCS2:
 - Migrace `supabase/migrations/20260922000000_temney_agent_v3.sql` — tabulky agenta: `agent_settings`, `agent_conversations`, `agent_messages`, `agent_recommendations`, `agent_action_log`, `agent_image_assets`, `agent_videos`, `youtube_publications`, `youtube_stats`, `youtube_credentials` + bucket `songcraft`.
 - `supabase/functions/agent-orchestrator/index.ts` — serverový orchest rátor s 9 toolů (list_songs, list_lyric_drafts, extract_lyric_themes, generate_song_artwork, generate_metadata, render_video, create_recommendation, schedule_publication, publish_to_youtube). `CONFIRM_REQUIRED` = {publish_to_youtube, update_existing_video, send_comment_reply}. Character bible TEMNEY.
 - `supabase/functions/video-renderer-dispatch/index.ts` — fronta `agent_videos` (render_status queued→rendering→ready/failed).
@@ -53,7 +53,7 @@ To je **prototyp schématu a konektorů**, který navrhujeme integrovat do hlavn
 
 ## 3. Cílové schéma agenta (fáze 0–1: konsolidace schémat)
 
-Sjednotit schéma z temney-agentu do hlavního SongCraft Studia. Vše se vztahuje k `user_id` (RLS).
+Sjednotit schéma z temney-agentu do hlavního SCS2. Vše se vztahuje k `user_id` (RLS).
 
 Tabulky **převést do hlavního repa** (`supabase/migrations/`) z `20260922000000_temney_agent_v3.sql` beze změny:
 - `agent_settings` (auto_publish, preferred_publish_hour)

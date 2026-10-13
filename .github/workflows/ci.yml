@@ -1,4 +1,4 @@
-name: SongCraft CI
+name: SCS2 CI
 
 on:
   pull_request:
